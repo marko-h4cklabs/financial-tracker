@@ -1,0 +1,461 @@
+import { useEffect, useState, useMemo, useRef } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import {
+  useReactTable, getCoreRowModel, getSortedRowModel,
+  createColumnHelper, type SortingState,
+} from '@tanstack/react-table'
+import { Plus, LayoutGrid, List, MoreHorizontal, GripVertical } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
+import { logActivity } from '@/lib/activityLogger'
+import { useAuth } from '@/store/authStore'
+import { formatCurrency, formatDate, formatDaysUntil } from '@/lib/formatters'
+import type { Deal, Client, Profile, DealStage } from '@/types'
+import Button from '@/components/ui/Button'
+import Card from '@/components/ui/Card'
+import Table from '@/components/ui/Table'
+import { DealStageBadge } from '@/components/ui/Badge'
+import EmptyState from '@/components/ui/EmptyState'
+import { SkeletonRow } from '@/components/ui/Skeleton'
+import DealFormModal from '@/components/modules/DealFormModal'
+import toast from 'react-hot-toast'
+import { Briefcase } from 'lucide-react'
+
+type ViewMode = 'kanban' | 'table'
+
+type EnrichedDeal = Deal & { client?: Client; assigned_profile?: Profile }
+
+const STAGES: DealStage[] = ['lead', 'proposal', 'negotiation', 'won', 'lost', 'paused']
+
+const STAGE_LABELS: Record<DealStage, string> = {
+  lead: 'Lead', proposal: 'Proposal', negotiation: 'Negotiation',
+  won: 'Won', lost: 'Lost', paused: 'Paused',
+}
+
+const STAGE_COLORS: Record<DealStage, { text: string; bg: string; border: string }> = {
+  lead:        { text: 'var(--status-blue)',   bg: 'rgba(74,144,217,0.06)',  border: 'rgba(74,144,217,0.15)' },
+  proposal:    { text: 'var(--status-purple)', bg: 'rgba(155,111,212,0.06)', border: 'rgba(155,111,212,0.15)' },
+  negotiation: { text: 'var(--status-yellow)', bg: 'rgba(224,160,48,0.06)',  border: 'rgba(224,160,48,0.15)' },
+  won:         { text: 'var(--status-green)',  bg: 'rgba(76,175,125,0.08)',  border: 'rgba(76,175,125,0.2)' },
+  lost:        { text: 'var(--status-red)',    bg: 'rgba(224,82,82,0.06)',   border: 'rgba(224,82,82,0.15)' },
+  paused:      { text: 'var(--text-muted)',    bg: 'rgba(90,82,72,0.06)',    border: 'rgba(90,82,72,0.15)' },
+}
+
+const helper = createColumnHelper<EnrichedDeal>()
+
+export default function DealsPage() {
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const { profile } = useAuth()
+
+  const [deals, setDeals] = useState<EnrichedDeal[]>([])
+  const [clients, setClients] = useState<Client[]>([])
+  const [profiles, setProfiles] = useState<Profile[]>([])
+  const [loading, setLoading] = useState(true)
+  const [view, setView] = useState<ViewMode>('kanban')
+  const [search, setSearch] = useState('')
+  const [stageFilter, setStageFilter] = useState(searchParams.get('stage') ?? '')
+  const [assignedFilter, setAssignedFilter] = useState('')
+  const [sorting, setSorting] = useState<SortingState>([])
+  const [showModal, setShowModal] = useState(false)
+  const [editDeal, setEditDeal] = useState<Deal | null>(null)
+  const [menuOpen, setMenuOpen] = useState<string | null>(null)
+
+  // Drag state
+  const dragId = useRef<string | null>(null)
+  const [dragOver, setDragOver] = useState<DealStage | null>(null)
+
+  useEffect(() => {
+    fetchDeals()
+    fetchClients()
+    fetchProfiles()
+  }, [])
+
+  async function fetchClients() {
+    const { data } = await supabase.from('clients').select('id, name, company').eq('status', 'active')
+    setClients((data ?? []) as Client[])
+  }
+
+  async function fetchProfiles() {
+    const { data } = await supabase.from('profiles').select('*').eq('is_active', true)
+    setProfiles((data ?? []) as Profile[])
+  }
+
+  async function fetchDeals() {
+    setLoading(true)
+    const { data, error } = await supabase
+      .from('deals')
+      .select('*, client:client_id(id, name, company), assigned_profile:assigned_to(id, full_name, avatar_initials)')
+      .order('created_at', { ascending: false })
+
+    if (error) { toast.error('Failed to load deals'); setLoading(false); return }
+    setDeals((data ?? []) as EnrichedDeal[])
+    setLoading(false)
+  }
+
+  async function updateDealStage(dealId: string, newStage: DealStage) {
+    // Optimistic update
+    setDeals((prev) => prev.map((d) => d.id === dealId ? { ...d, stage: newStage } : d))
+    const { error } = await supabase.from('deals').update({ stage: newStage }).eq('id', dealId)
+    if (error) {
+      toast.error('Failed to update stage')
+      fetchDeals()
+      return
+    }
+    await logActivity({ entity_type: 'deal', entity_id: dealId, action: 'status_change', description: `Moved deal to ${STAGE_LABELS[newStage]}` })
+    toast.success(`Moved to ${STAGE_LABELS[newStage]}`)
+  }
+
+  async function deleteDeal(dealId: string, title: string) {
+    if (!confirm(`Delete "${title}"? This cannot be undone.`)) return
+    await supabase.from('deals').delete().eq('id', dealId)
+    await logActivity({ entity_type: 'deal', entity_id: dealId, action: 'delete', description: `Deleted deal "${title}"` })
+    toast.success('Deal deleted')
+    fetchDeals()
+  }
+
+  const filtered = useMemo(() => {
+    return deals.filter((d) => {
+      const q = search.toLowerCase()
+      const client = d.client as { name?: string; company?: string } | undefined
+      const matchSearch = !q || d.title.toLowerCase().includes(q) || (client?.name ?? '').toLowerCase().includes(q)
+      const matchStage = !stageFilter || d.stage === stageFilter
+      const matchAssigned = !assignedFilter || d.assigned_to === assignedFilter
+      return matchSearch && matchStage && matchAssigned
+    })
+  }, [deals, search, stageFilter, assignedFilter])
+
+  // Kanban columns
+  const columns_by_stage = useMemo(() => {
+    return STAGES.map((stage) => ({
+      stage,
+      deals: filtered.filter((d) => d.stage === stage),
+      total: filtered.filter((d) => d.stage === stage).reduce((s, d) => s + Number(d.value), 0),
+    }))
+  }, [filtered])
+
+  // Table columns
+  const tableColumns = useMemo(() => [
+    helper.display({
+      id: 'title',
+      header: 'Deal',
+      cell: ({ row }) => {
+        const client = row.original.client as { name?: string } | undefined
+        return (
+          <div>
+            <p className="font-medium text-sm" style={{ color: 'var(--text-primary)' }}>{row.original.title}</p>
+            {client?.name && <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{client.name}</p>}
+          </div>
+        )
+      },
+    }),
+    helper.accessor('stage', {
+      header: 'Stage',
+      cell: ({ getValue }) => <DealStageBadge stage={getValue()} />,
+    }),
+    helper.accessor('value', {
+      header: 'Value',
+      cell: ({ row }) => (
+        <span style={{ fontFamily: 'DM Mono, monospace', color: 'var(--gold-primary)', fontSize: '13px' }}>
+          {formatCurrency(row.original.value, row.original.currency)}
+        </span>
+      ),
+    }),
+    helper.accessor('probability', {
+      header: 'Probability',
+      cell: ({ getValue }) => (
+        <div className="flex items-center gap-2 w-24">
+          <div className="flex-1 h-1 rounded-full" style={{ background: 'var(--border-default)' }}>
+            <div className="h-full rounded-full" style={{ width: `${getValue()}%`, background: 'var(--gold-primary)' }} />
+          </div>
+          <span className="text-xs" style={{ color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>{getValue()}%</span>
+        </div>
+      ),
+    }),
+    helper.display({
+      id: 'assigned',
+      header: 'Assigned',
+      cell: ({ row }) => {
+        const ap = row.original.assigned_profile as Profile | undefined
+        if (!ap) return <span style={{ color: 'var(--text-muted)' }}>—</span>
+        const initials = ap.avatar_initials ?? ap.full_name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
+        return (
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold"
+              style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)', border: '1px solid var(--border-default)' }}>
+              {initials}
+            </div>
+            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{ap.full_name}</span>
+          </div>
+        )
+      },
+    }),
+    helper.accessor('end_date', {
+      header: 'Deadline',
+      cell: ({ getValue }) => {
+        const v = getValue()
+        if (!v) return <span style={{ color: 'var(--text-muted)' }}>—</span>
+        const rel = formatDaysUntil(v)
+        const isOverdue = rel.includes('overdue')
+        return (
+          <div>
+            <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{formatDate(v)}</p>
+            <p className="text-[10px]" style={{ color: isOverdue ? 'var(--status-red)' : 'var(--text-muted)' }}>{rel}</p>
+          </div>
+        )
+      },
+    }),
+    helper.display({
+      id: 'actions',
+      header: '',
+      cell: ({ row }) => (
+        <div className="relative">
+          <button
+            onClick={(e) => { e.stopPropagation(); setMenuOpen(menuOpen === row.original.id ? null : row.original.id) }}
+            className="w-7 h-7 rounded flex items-center justify-center"
+            style={{ color: 'var(--text-muted)' }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}>
+            <MoreHorizontal size={15} />
+          </button>
+          {menuOpen === row.original.id && (
+            <div className="absolute right-0 top-8 w-40 rounded shadow-lg z-10 py-1"
+              style={{ background: 'var(--bg-overlay)', border: '1px solid var(--border-default)' }}>
+              {[
+                { label: 'View', action: () => navigate(`/deals/${row.original.id}`) },
+                { label: 'Edit', action: () => { setEditDeal(row.original); setShowModal(true); setMenuOpen(null) } },
+                { label: 'Move to Won', action: () => { updateDealStage(row.original.id, 'won'); setMenuOpen(null) } },
+                { label: 'Move to Lost', action: () => { updateDealStage(row.original.id, 'lost'); setMenuOpen(null) } },
+                { label: 'Delete', action: () => { deleteDeal(row.original.id, row.original.title); setMenuOpen(null) } },
+              ].map(({ label, action }) => (
+                <button key={label} onClick={(e) => { e.stopPropagation(); action() }}
+                  className="w-full text-left px-3 py-2 text-xs"
+                  style={{ color: label === 'Delete' ? 'var(--status-red)' : 'var(--text-secondary)' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-elevated)' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      ),
+    }),
+  ], [menuOpen, navigate])
+
+  const table = useReactTable({
+    data: filtered,
+    columns: tableColumns,
+    state: { sorting },
+    onSortingChange: setSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+  })
+
+  return (
+    <div className="space-y-4" onClick={() => setMenuOpen(null)}>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <h1 className="text-xl font-medium" style={{ color: 'var(--text-primary)' }}>Deals</h1>
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            <span style={{ fontFamily: 'DM Mono, monospace', color: 'var(--text-primary)' }}>{deals.length}</span> total
+          </span>
+        </div>
+        <div className="flex items-center gap-3">
+          {/* View toggle */}
+          <div className="flex rounded overflow-hidden" style={{ border: '1px solid var(--border-default)' }}>
+            {(['kanban', 'table'] as ViewMode[]).map((v) => (
+              <button key={v} onClick={() => setView(v)}
+                className="px-3 py-1.5 flex items-center gap-1.5 text-xs transition-colors"
+                style={{
+                  background: view === v ? 'var(--gold-muted)' : 'transparent',
+                  color: view === v ? 'var(--gold-primary)' : 'var(--text-muted)',
+                }}>
+                {v === 'kanban' ? <LayoutGrid size={13} /> : <List size={13} />}
+                {v === 'kanban' ? 'Pipeline' : 'List'}
+              </button>
+            ))}
+          </div>
+          <Button onClick={() => { setEditDeal(null); setShowModal(true) }}>
+            <Plus size={14} /> New Deal
+          </Button>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <Card>
+        <div className="flex items-center gap-3 px-4 py-3">
+          <input placeholder="Search deals…" value={search} onChange={(e) => setSearch(e.target.value)}
+            className="flex-1 px-3 py-2 rounded text-sm outline-none"
+            style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }}
+            onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--gold-primary)')}
+            onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border-default)')} />
+          <select value={stageFilter} onChange={(e) => setStageFilter(e.target.value)}
+            className="px-3 py-2 rounded text-sm outline-none"
+            style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: stageFilter ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+            <option value="">All stages</option>
+            {STAGES.map((s) => <option key={s} value={s}>{STAGE_LABELS[s]}</option>)}
+          </select>
+          <select value={assignedFilter} onChange={(e) => setAssignedFilter(e.target.value)}
+            className="px-3 py-2 rounded text-sm outline-none"
+            style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: assignedFilter ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+            <option value="">All team members</option>
+            {profiles.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+          </select>
+        </div>
+      </Card>
+
+      {/* KANBAN VIEW */}
+      {view === 'kanban' && (
+        <div className="flex gap-3 overflow-x-auto pb-2">
+          {columns_by_stage.map(({ stage, deals: stageDeals, total }) => {
+            const colors = STAGE_COLORS[stage]
+            const isDropTarget = dragOver === stage
+            return (
+              <div key={stage}
+                className="flex-shrink-0 w-64 rounded-lg flex flex-col"
+                style={{
+                  background: isDropTarget ? colors.bg : 'var(--bg-surface)',
+                  border: `1px solid ${isDropTarget ? colors.border : 'var(--border-subtle)'}`,
+                  minHeight: '300px',
+                  transition: 'all 0.15s',
+                }}
+                onDragOver={(e) => { e.preventDefault(); setDragOver(stage) }}
+                onDragLeave={() => setDragOver(null)}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  setDragOver(null)
+                  if (dragId.current) updateDealStage(dragId.current, stage)
+                  dragId.current = null
+                }}>
+                {/* Column header */}
+                <div className="px-3 py-3" style={{ borderBottom: `1px solid ${colors.border}` }}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: colors.text }}>
+                      {STAGE_LABELS[stage]}
+                    </span>
+                    <span className="text-xs px-1.5 py-0.5 rounded-full font-medium"
+                      style={{ background: colors.bg, color: colors.text, border: `1px solid ${colors.border}` }}>
+                      {stageDeals.length}
+                    </span>
+                  </div>
+                  {stageDeals.length > 0 && (
+                    <p className="text-xs mt-1" style={{ fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>
+                      {formatCurrency(total)}
+                    </p>
+                  )}
+                </div>
+
+                {/* Cards */}
+                <div className="flex-1 p-2 space-y-2">
+                  {stageDeals.map((deal) => {
+                    const client = deal.client as { name?: string } | undefined
+                    const ap = deal.assigned_profile as Profile | undefined
+                    const initials = ap ? (ap.avatar_initials ?? ap.full_name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()) : null
+                    return (
+                      <div key={deal.id}
+                        draggable
+                        onDragStart={() => { dragId.current = deal.id }}
+                        onDragEnd={() => { dragId.current = null; setDragOver(null) }}
+                        onClick={() => navigate(`/deals/${deal.id}`)}
+                        className="rounded p-3 cursor-pointer group relative"
+                        style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}
+                        onMouseEnter={(e) => (e.currentTarget.style.borderColor = colors.border)}
+                        onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--border-subtle)')}>
+                        <GripVertical size={12}
+                          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                          style={{ color: 'var(--text-muted)' }} />
+                        {client?.name && (
+                          <p className="text-[10px] uppercase tracking-wider mb-1 truncate" style={{ color: 'var(--text-muted)' }}>
+                            {client.name}
+                          </p>
+                        )}
+                        <p className="text-sm font-medium leading-snug mb-2" style={{ color: 'var(--text-primary)' }}>
+                          {deal.title}
+                        </p>
+                        <div className="flex items-center justify-between">
+                          <span style={{ fontFamily: 'DM Mono, monospace', color: colors.text, fontSize: '13px', fontWeight: 500 }}>
+                            {formatCurrency(deal.value, deal.currency)}
+                          </span>
+                          {initials && (
+                            <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-semibold"
+                              style={{ background: 'var(--bg-overlay)', color: 'var(--text-secondary)', border: '1px solid var(--border-default)' }}>
+                              {initials}
+                            </div>
+                          )}
+                        </div>
+                        {deal.end_date && (
+                          <p className="text-[10px] mt-1.5" style={{ color: formatDaysUntil(deal.end_date).includes('overdue') ? 'var(--status-red)' : 'var(--text-muted)' }}>
+                            {formatDaysUntil(deal.end_date)}
+                          </p>
+                        )}
+
+                        {/* Three-dot menu */}
+                        <div className="mt-2 pt-2 flex justify-end" style={{ borderTop: '1px solid var(--border-subtle)' }}
+                          onClick={(e) => e.stopPropagation()}>
+                          <button onClick={(e) => { e.stopPropagation(); setMenuOpen(menuOpen === deal.id ? null : deal.id) }}
+                            className="p-1 rounded" style={{ color: 'var(--text-muted)' }}
+                            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
+                            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}>
+                            <MoreHorizontal size={13} />
+                          </button>
+                          {menuOpen === deal.id && (
+                            <div className="absolute bottom-8 right-2 w-36 rounded shadow-lg z-20 py-1"
+                              style={{ background: 'var(--bg-overlay)', border: '1px solid var(--border-default)' }}>
+                              {[
+                                { label: 'Edit', action: () => { setEditDeal(deal); setShowModal(true); setMenuOpen(null) } },
+                                { label: 'Move to Won', action: () => { updateDealStage(deal.id, 'won'); setMenuOpen(null) } },
+                                { label: 'Move to Lost', action: () => { updateDealStage(deal.id, 'lost'); setMenuOpen(null) } },
+                                { label: 'Delete', action: () => { deleteDeal(deal.id, deal.title); setMenuOpen(null) } },
+                              ].map(({ label, action }) => (
+                                <button key={label} onClick={action}
+                                  className="w-full text-left px-3 py-1.5 text-xs"
+                                  style={{ color: label === 'Delete' ? 'var(--status-red)' : 'var(--text-secondary)' }}
+                                  onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-elevated)' }}
+                                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {stageDeals.length === 0 && (
+                    <p className="text-xs text-center py-6" style={{ color: 'var(--text-muted)' }}>Drop deals here</p>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* TABLE VIEW */}
+      {view === 'table' && (
+        <Card>
+          {loading ? (
+            <table className="w-full"><tbody>{Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={7} />)}</tbody></table>
+          ) : filtered.length === 0 ? (
+            <EmptyState icon={Briefcase} title="No deals found"
+              description={search || stageFilter ? 'Try adjusting your filters' : 'Create your first deal to get started'}
+              action={!search && !stageFilter ? { label: 'New Deal', onClick: () => setShowModal(true) } : undefined} />
+          ) : (
+            <Table table={table} onRowClick={(row) => navigate(`/deals/${row.id}`)} />
+          )}
+        </Card>
+      )}
+
+      <DealFormModal
+        isOpen={showModal}
+        onClose={() => { setShowModal(false); setEditDeal(null) }}
+        deal={editDeal}
+        clients={clients}
+        profiles={profiles}
+        currentUserId={profile?.id ?? ''}
+        onSaved={() => { fetchDeals(); setShowModal(false); setEditDeal(null) }}
+      />
+    </div>
+  )
+}
