@@ -45,10 +45,10 @@ export default function AdminPage() {
         Admin
       </h1>
 
-      <div className="flex gap-1 p-1 rounded-lg" style={{ background: 'var(--bg-elevated)', width: 'fit-content' }}>
+      <div className="flex gap-1 p-1 rounded-lg overflow-x-auto" style={{ background: 'var(--bg-elevated)', width: 'fit-content', maxWidth: '100%' }}>
         {(['team', 'activity', 'financial'] as Tab[]).map((t) => (
           <button key={t} onClick={() => setTab(t)}
-            className="px-4 py-1.5 text-sm rounded-md transition-all"
+            className="px-3 md:px-4 py-1.5 text-xs md:text-sm rounded-md transition-all whitespace-nowrap"
             style={tab === t
               ? { background: 'var(--gold-primary)', color: '#0A0A0A', fontWeight: 600 }
               : { color: 'var(--text-muted)' }}>
@@ -289,7 +289,7 @@ function ActivityTab() {
   return (
     <div className="space-y-4">
       <Card className="p-4">
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {[
             { label: 'User', value: filterUser, onChange: (v: string) => { setFilterUser(v); setPage(0) },
               options: [{ value: '', label: 'All Users' }, ...profiles.map((p) => ({ value: p.id, label: p.full_name }))] },
@@ -472,7 +472,7 @@ function FinancialTab() {
         </div>
       </Card>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card className="p-6">
           <p className="text-[10px] uppercase tracking-wider mb-4" style={{ color: 'var(--text-muted)' }}>
             Top Clients by Revenue

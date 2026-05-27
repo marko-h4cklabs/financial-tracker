@@ -21,7 +21,7 @@ export default function StatCard({
 }: StatCardProps) {
   return (
     <div
-      className="rounded-lg p-5"
+      className="rounded-lg p-4 md:p-5"
       style={{
         background: 'var(--bg-surface)',
         border: '1px solid var(--border-subtle)',
@@ -43,7 +43,7 @@ export default function StatCard({
       </div>
 
       <div
-        className="text-2xl font-light mb-1"
+        className="text-xl md:text-2xl font-light mb-1"
         style={{ fontFamily: 'DM Mono, monospace', color: 'var(--text-primary)' }}
       >
         {value}

@@ -3,13 +3,14 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Plus, Trash2, ArrowLeft } from 'lucide-react'
+import { Plus, Trash2, ArrowLeft, Eye, EyeOff } from 'lucide-react'
 import { format } from 'date-fns'
 import { supabase } from '@/lib/supabase'
 import { logActivity } from '@/lib/activityLogger'
 import { useAuth } from '@/store/authStore'
 import { formatCurrency } from '@/lib/formatters'
 import type { Client, Deal } from '@/types'
+import { useIsMobile } from '@/hooks/useIsMobile'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
@@ -45,6 +46,8 @@ export default function InvoiceFormPage() {
   const [deals, setDeals] = useState<Deal[]>([])
   const [filteredDeals, setFilteredDeals] = useState<Deal[]>([])
   const [saving, setSaving] = useState(false)
+  const [showPreview, setShowPreview] = useState(false)
+  const isMobile = useIsMobile()
 
   const { register, control, handleSubmit, watch, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -143,9 +146,9 @@ export default function InvoiceFormPage() {
       <h1 className="text-xl font-medium" style={{ color: 'var(--text-primary)' }}>New Invoice</h1>
 
       <form onSubmit={handleSubmit((d) => onSubmit(d, false))}>
-        <div className="grid grid-cols-5 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
           {/* LEFT — Form (60%) */}
-          <div className="col-span-3 space-y-5">
+          <div className="col-span-1 md:col-span-3 space-y-5">
             {/* Header section */}
             <div className="rounded-lg p-5 space-y-4" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)' }}>
               <h3 className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Invoice Details</h3>
@@ -189,7 +192,7 @@ export default function InvoiceFormPage() {
             <div className="rounded-lg p-5 space-y-3" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)' }}>
               <h3 className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Line Items</h3>
 
-              <div className="grid grid-cols-12 gap-2 text-[10px] uppercase tracking-wider px-1" style={{ color: 'var(--text-muted)' }}>
+              <div className="hidden md:grid grid-cols-12 gap-2 text-[10px] uppercase tracking-wider px-1" style={{ color: 'var(--text-muted)' }}>
                 <div className="col-span-6">Description</div>
                 <div className="col-span-2 text-right">Qty</div>
                 <div className="col-span-2 text-right">Unit Price</div>
@@ -201,7 +204,55 @@ export default function InvoiceFormPage() {
                 const qty = Number(watchedItems[idx]?.quantity ?? 0)
                 const price = Number(watchedItems[idx]?.unit_price ?? 0)
                 const amount = qty * price
-                return (
+                return isMobile ? (
+                  <div key={field.id} className="rounded-lg p-3 space-y-2" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)' }}>
+                    <input
+                      placeholder="Description"
+                      {...register(`items.${idx}.description`)}
+                      className="w-full px-2 py-2 rounded text-sm outline-none"
+                      style={{ background: 'var(--bg-surface)', border: `1px solid ${errors.items?.[idx]?.description ? 'var(--status-red)' : 'var(--border-subtle)'}`, color: 'var(--text-primary)' }}
+                      onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--gold-primary)')}
+                      onBlur={(e) => (e.currentTarget.style.borderColor = errors.items?.[idx]?.description ? 'var(--status-red)' : 'var(--border-subtle)')}
+                    />
+                    <div className="flex items-end gap-2">
+                      <div className="flex-1">
+                        <p className="text-[9px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Qty</p>
+                        <input
+                          type="number" step="0.01" min="0"
+                          {...register(`items.${idx}.quantity`)}
+                          className="w-full px-2 py-1.5 rounded text-sm outline-none text-right"
+                          style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)', fontFamily: 'DM Mono, monospace' }}
+                          onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--gold-primary)')}
+                          onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border-subtle)')}
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-[9px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Unit Price</p>
+                        <input
+                          type="number" step="0.01" min="0"
+                          {...register(`items.${idx}.unit_price`)}
+                          className="w-full px-2 py-1.5 rounded text-sm outline-none text-right"
+                          style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)', fontFamily: 'DM Mono, monospace' }}
+                          onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--gold-primary)')}
+                          onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border-subtle)')}
+                        />
+                      </div>
+                      <div className="text-right flex-shrink-0 pb-0.5">
+                        <p className="text-[9px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Amount</p>
+                        <p className="text-sm py-1.5" style={{ fontFamily: 'DM Mono, monospace', color: 'var(--gold-primary)' }}>
+                          {formatCurrency(amount, watchedCurrency)}
+                        </p>
+                      </div>
+                      {fields.length > 1 && (
+                        <button type="button" onClick={() => remove(idx)} className="flex-shrink-0 pb-2" style={{ color: 'var(--text-muted)' }}
+                          onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--status-red)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}>
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
                   <div key={field.id} className="grid grid-cols-12 gap-2 items-start">
                     <div className="col-span-6">
                       <input
@@ -261,7 +312,7 @@ export default function InvoiceFormPage() {
             {/* Totals + Notes */}
             <div className="rounded-lg p-5 space-y-4" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)' }}>
               <div className="flex justify-end">
-                <div className="w-64 space-y-2">
+                <div className="w-full md:w-64 space-y-2">
                   <div className="flex justify-between text-sm">
                     <span style={{ color: 'var(--text-muted)' }}>Subtotal</span>
                     <span style={{ fontFamily: 'DM Mono, monospace', color: 'var(--text-secondary)' }}>{formatCurrency(subtotal, watchedCurrency)}</span>
@@ -286,8 +337,17 @@ export default function InvoiceFormPage() {
               <Textarea label="Notes" rows={3} placeholder="Payment terms, bank details, thank-you note…" {...register('notes')} />
             </div>
 
+            {/* Mobile preview toggle */}
+            <button
+              type="button"
+              onClick={() => setShowPreview((v) => !v)}
+              className="md:hidden w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm transition-colors"
+              style={{ border: '1px solid var(--border-default)', color: 'var(--text-secondary)', background: 'var(--bg-elevated)' }}>
+              {showPreview ? <><EyeOff size={14} /> Hide Preview</> : <><Eye size={14} /> Show Preview</>}
+            </button>
+
             {/* Actions */}
-            <div className="flex justify-end gap-3">
+            <div className="flex flex-col md:flex-row md:justify-end gap-3">
               <Button type="button" variant="ghost" onClick={() => navigate('/invoices')}>Cancel</Button>
               <Button type="submit" variant="secondary" loading={saving}>Save as Draft</Button>
               <Button type="button" loading={saving}
@@ -298,7 +358,7 @@ export default function InvoiceFormPage() {
           </div>
 
           {/* RIGHT — Live Preview (40%) */}
-          <div className="col-span-2">
+          <div className={`col-span-1 md:col-span-2 ${!showPreview ? 'hidden md:block' : ''}`}>
             <div className="sticky top-20">
               <p className="text-xs uppercase tracking-wider mb-3" style={{ color: 'var(--text-muted)' }}>Preview</p>
               <div className="rounded-lg overflow-hidden" style={{

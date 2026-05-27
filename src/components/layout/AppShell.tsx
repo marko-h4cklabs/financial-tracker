@@ -25,8 +25,9 @@ export default function AppShell({ children }: AppShellProps) {
     <div className="min-h-screen" style={{ background: 'var(--bg-base)' }}>
       <Sidebar />
       <Header onOpenPalette={() => setPaletteOpen(true)} />
-      <main className="ml-60 pt-14 min-h-screen">
-        <div className="p-6">{children}</div>
+      {/* Responsive main: no left margin on mobile, 56px on tablet, 240px on desktop */}
+      <main className="pt-14 min-h-screen ml-0 md:ml-14 lg:ml-60">
+        <div className="p-4 md:p-6">{children}</div>
       </main>
       <CommandPalette isOpen={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>

@@ -5,6 +5,7 @@ import {
   createColumnHelper, type SortingState,
 } from '@tanstack/react-table'
 import { Plus, CalendarClock, CheckCircle, Clock, AlertTriangle, TrendingUp } from 'lucide-react'
+import { useIsMobile } from '@/hooks/useIsMobile'
 import { format, addDays, differenceInDays, startOfMonth, endOfMonth, isSameDay } from 'date-fns'
 import { supabase } from '@/lib/supabase'
 import { logActivity } from '@/lib/activityLogger'
@@ -48,6 +49,7 @@ export default function InstallmentsPage() {
   const [paidMethod, setPaidMethod] = useState<PaymentMethod>('bank_transfer')
   const [marking, setMarking] = useState(false)
   const popoverRef = useRef<HTMLDivElement>(null)
+  const isMobile = useIsMobile()
 
   useEffect(() => {
     fetchInstallments()
@@ -306,12 +308,12 @@ export default function InstallmentsPage() {
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-medium" style={{ color: 'var(--text-primary)' }}>Payment Schedule</h1>
-        <Button onClick={() => setShowModal(true)}><Plus size={14} /> Add Installment</Button>
+        <h1 className="text-lg md:text-xl font-medium" style={{ color: 'var(--text-primary)' }}>Payment Schedule</h1>
+        <Button onClick={() => setShowModal(true)} className="hidden md:flex"><Plus size={14} /> Add Installment</Button>
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         {kpiLoading
           ? Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
           : <>
@@ -398,18 +400,78 @@ export default function InstallmentsPage() {
         </div>
       </Card>
 
-      {/* Table */}
-      <Card>
-        {loading ? (
-          <table className="w-full"><tbody>{Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} cols={8} />)}</tbody></table>
-        ) : filtered.length === 0 ? (
-          <EmptyState icon={CalendarClock} title="No installments found"
-            description={search || statusFilter ? 'Try adjusting your filters' : 'Add your first payment installment'}
-            action={!search && !statusFilter ? { label: 'Add Installment', onClick: () => setShowModal(true) } : undefined} />
-        ) : (
-          <Table table={table} />
-        )}
-      </Card>
+      {/* Table (tablet+) */}
+      {!isMobile && (
+        <Card>
+          {loading ? (
+            <table className="w-full"><tbody>{Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} cols={8} />)}</tbody></table>
+          ) : filtered.length === 0 ? (
+            <EmptyState icon={CalendarClock} title="No installments found"
+              description={search || statusFilter ? 'Try adjusting your filters' : 'Add your first payment installment'}
+              action={!search && !statusFilter ? { label: 'Add Installment', onClick: () => setShowModal(true) } : undefined} />
+          ) : (
+            <Table table={table} />
+          )}
+        </Card>
+      )}
+
+      {/* Mobile card list */}
+      {isMobile && (
+        <div className="space-y-2">
+          {loading ? (
+            Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="rounded-lg p-4 animate-pulse" style={{ background: 'var(--bg-surface)', height: 96 }} />
+            ))
+          ) : filtered.length === 0 ? (
+            <EmptyState icon={CalendarClock} title="No installments found"
+              description={search || statusFilter ? 'Try adjusting your filters' : 'Add your first installment'} />
+          ) : filtered.map((inst) => {
+            const client = inst.client as { name?: string } | undefined
+            const deal = inst.deal as { title?: string } | undefined
+            const days = differenceInDays(new Date(inst.due_date), new Date())
+            const isOverdue = inst.status !== 'paid' && inst.due_date < today
+            return (
+              <div key={inst.id}
+                className="rounded-lg p-4"
+                style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)' }}>
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div className="min-w-0">
+                    <p className="font-medium text-sm truncate" style={{ color: 'var(--text-primary)' }}>{inst.title}</p>
+                    {client?.name && <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{client.name}</p>}
+                    {deal?.title && <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{deal.title}</p>}
+                  </div>
+                  <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                    <InstallmentStatusBadge status={inst.status} />
+                    <span style={{ fontFamily: 'DM Mono, monospace', color: 'var(--gold-primary)', fontSize: '14px', fontWeight: 600 }}>
+                      {formatCurrency(inst.amount, inst.currency)}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs" style={{ color: isOverdue ? 'var(--status-red)' : days < 7 && inst.status !== 'paid' ? 'var(--status-yellow)' : 'var(--text-muted)' }}>
+                    {inst.status === 'paid' ? `Paid ${formatDate(inst.paid_at ?? '')}` : formatDaysUntil(inst.due_date)}
+                  </p>
+                  {inst.status === 'pending' && (
+                    <button onClick={() => { setPaidPopover(inst.id); setPaidDate(new Date().toISOString().slice(0, 10)); setPaidMethod('bank_transfer') }}
+                      className="text-xs px-3 py-1.5 rounded flex items-center gap-1"
+                      style={{ color: 'var(--status-green)', border: '1px solid rgba(76,175,125,0.3)', background: 'rgba(76,175,125,0.08)' }}>
+                      <CheckCircle size={11} /> Mark Paid
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Mobile FAB */}
+      <button
+        className="fixed bottom-6 right-6 w-14 h-14 rounded-full flex items-center justify-center shadow-2xl z-20 md:hidden"
+        style={{ background: 'var(--gold-primary)', color: '#0A0A0A' }}
+        onClick={() => setShowModal(true)}>
+        <Plus size={22} />
+      </button>
 
       {/* Add installment modal — requires deal selection first */}
       {showModal && (

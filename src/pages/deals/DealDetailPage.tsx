@@ -126,8 +126,8 @@ export default function DealDetailPage() {
       </button>
 
       {/* Header card */}
-      <Card className="p-5">
-        <div className="flex items-start justify-between gap-4">
+      <Card className="p-4 md:p-5">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
           <div>
             {client?.name && (
               <button onClick={() => navigate(`/clients/${client.id}`)} className="text-xs mb-1 transition-colors"
@@ -137,27 +137,28 @@ export default function DealDetailPage() {
                 {client.name}{client.company ? ` — ${client.company}` : ''}
               </button>
             )}
-            <h1 className="text-2xl font-light mb-2"
+            <h1 className="text-xl md:text-2xl font-light mb-2"
               style={{ fontFamily: 'Cormorant Garamond, serif', color: 'var(--text-primary)' }}>
               {deal.title}
             </h1>
             <div className="flex items-center gap-3">
               <DealStageBadge stage={deal.stage} />
-              <span className="text-xl font-light" style={{ fontFamily: 'DM Mono, monospace', color: 'var(--gold-primary)' }}>
+              <span className="text-lg md:text-xl font-light" style={{ fontFamily: 'DM Mono, monospace', color: 'var(--gold-primary)' }}>
                 {formatCurrency(deal.value, deal.currency)}
               </span>
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-2 overflow-x-auto flex-shrink-0">
             <Button variant="secondary" size="sm" onClick={() => setShowEditModal(true)}><Edit size={13} /> Edit</Button>
-            <Button size="sm" onClick={() => { setEditInstallment(null); setShowInstallmentModal(true) }}><Plus size={13} /> Add Installment</Button>
+            <Button size="sm" onClick={() => { setEditInstallment(null); setShowInstallmentModal(true) }}><Plus size={13} /> Installment</Button>
             <Button size="sm" variant="secondary" onClick={() => navigate(`/invoices/new?deal=${id}`)}><Plus size={13} /> Invoice</Button>
           </div>
         </div>
 
-        {/* Stage progress tracker */}
+        {/* Stage progress tracker — horizontally scrollable on mobile */}
         {!['lost', 'paused'].includes(deal.stage) && (
-          <div className="mt-5 flex items-center gap-0">
+          <div className="mt-4 md:mt-5 overflow-x-auto">
+          <div className="flex items-center gap-0 min-w-max md:min-w-0">
             {STAGE_STEPS.map((step, idx) => {
               const isDone = currentStepIdx >= idx
               const isCurrent = idx === currentStepIdx
@@ -187,25 +188,28 @@ export default function DealDetailPage() {
               )
             })}
           </div>
+          </div>
         )}
       </Card>
 
       {/* Tabs */}
-      <div className="flex gap-1" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+      <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+        <div className="flex gap-1 min-w-max md:min-w-0">
         {tabs.map(({ key, label }) => (
           <button key={key} onClick={() => setActiveTab(key)}
-            className="px-4 py-2.5 text-sm relative transition-colors"
+            className="px-3 md:px-4 py-2.5 text-xs md:text-sm relative transition-colors whitespace-nowrap"
             style={{ color: activeTab === key ? 'var(--gold-primary)' : 'var(--text-muted)' }}>
             {label}
             {activeTab === key && <span className="absolute bottom-0 left-0 right-0 h-0.5" style={{ background: 'var(--gold-primary)' }} />}
           </button>
         ))}
+        </div>
       </div>
 
       {/* Overview */}
       {activeTab === 'overview' && (
-        <div className="grid grid-cols-3 gap-4">
-          <div className="col-span-2">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="col-span-1 lg:col-span-2">
             <Card className="p-5">
               <h3 className="text-xs font-medium uppercase tracking-wider mb-4" style={{ color: 'var(--text-muted)' }}>Deal Details</h3>
               <div className="grid grid-cols-2 gap-y-3 text-sm">

@@ -27,8 +27,8 @@ export default function SettingsPage() {
   const [tab, setTab] = useState<Tab>('profile')
 
   return (
-    <div className="space-y-4 max-w-2xl">
-      <h1 className="text-2xl font-light tracking-widest uppercase"
+    <div className="space-y-4 max-w-2xl w-full">
+      <h1 className="text-xl md:text-2xl font-light tracking-widest uppercase"
         style={{ fontFamily: 'Cormorant Garamond, serif', color: 'var(--gold-primary)' }}>
         Settings
       </h1>

@@ -155,9 +155,9 @@ export default function DashboardPage() {
   const revenueUp = kpis ? kpis.revenueThisMonth >= kpis.revenueLastMonth : true
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       {/* KPI Row */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         {loading ? (
           Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
         ) : (
@@ -192,15 +192,16 @@ export default function DashboardPage() {
       </div>
 
       {/* Pipeline + Activity */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Pipeline */}
-        <div className="col-span-2">
+        <div className="col-span-1 lg:col-span-2">
           <Card goldAccent>
             <div className="px-5 py-4" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
               <h3 className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Deal Pipeline</h3>
             </div>
-            <div className="p-5">
-              <div className="grid grid-cols-6 gap-2">
+            <div className="p-4 md:p-5">
+              <div className="overflow-x-auto">
+              <div className="grid grid-cols-6 gap-2 min-w-[400px]">
                 {pipeline.map((col) => (
                   <button
                     key={col.stage}
@@ -224,6 +225,7 @@ export default function DashboardPage() {
                     </span>
                   </button>
                 ))}
+              </div>
               </div>
             </div>
           </Card>
@@ -266,7 +268,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Installments + Overdue Invoices */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Upcoming Installments */}
         <Card>
           <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border-subtle)' }}>

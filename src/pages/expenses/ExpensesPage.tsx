@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Plus, Receipt, TrendingDown, Tag, AlertCircle } from 'lucide-react'
+import { useIsMobile } from '@/hooks/useIsMobile'
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/store/authStore'
@@ -157,12 +158,14 @@ export default function ExpensesPage() {
     setCategoryFilter((prev) => prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat])
   }
 
+  const isMobile = useIsMobile()
+
   return (
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <h1 className="text-xl font-medium" style={{ color: 'var(--text-primary)' }}>Expenses</h1>
+        <div className="flex items-center gap-3 md:gap-4">
+          <h1 className="text-lg md:text-xl font-medium" style={{ color: 'var(--text-primary)' }}>Expenses</h1>
           <div className="flex rounded overflow-hidden" style={{ border: '1px solid var(--border-default)' }}>
             {(['list','summary'] as ViewTab[]).map((v) => (
               <button key={v} onClick={() => setViewTab(v)}
@@ -173,11 +176,11 @@ export default function ExpensesPage() {
             ))}
           </div>
         </div>
-        <Button onClick={() => { setEditExpense(null); setShowModal(true) }}><Plus size={14} /> Add Expense</Button>
+        <Button onClick={() => { setEditExpense(null); setShowModal(true) }} className="hidden md:flex"><Plus size={14} /> Add Expense</Button>
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         {kpiLoading
           ? Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
           : <>
@@ -264,80 +267,118 @@ export default function ExpensesPage() {
             </div>
           </Card>
 
-          {/* Expenses list */}
-          <Card>
-            {loading ? (
-              <div className="divide-y" style={{ borderColor: 'var(--border-subtle)' }}>
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <div key={i} className="flex items-center justify-between px-5 py-4 gap-4 animate-pulse">
-                    <div className="h-4 rounded w-48" style={{ background: 'var(--bg-elevated)' }} />
-                    <div className="h-4 rounded w-20" style={{ background: 'var(--bg-elevated)' }} />
-                  </div>
-                ))}
-              </div>
-            ) : filtered.length === 0 ? (
-              <EmptyState icon={Receipt} title="No expenses found"
-                description={search || categoryFilter.length ? 'Try adjusting your filters' : 'Add your first expense'}
-                action={!search && !categoryFilter.length ? { label: 'Add Expense', onClick: () => setShowModal(true) } : undefined} />
-            ) : (
-              <div className="divide-y" style={{ borderColor: 'var(--border-subtle)' }}>
-                {filtered.map((exp) => {
-                  const client = exp.client as { id?: string; name?: string } | undefined
-                  const deal = exp.deal as { id?: string; title?: string } | undefined
-                  const createdBy = exp.created_by_profile as { full_name?: string } | undefined
-                  return (
-                    <div key={exp.id} className="flex items-center justify-between px-5 py-3 gap-4"
-                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-elevated)')}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
-                      <div className="flex items-center gap-4 min-w-0">
-                        <div className="w-8 h-8 rounded flex items-center justify-center flex-shrink-0"
-                          style={{ background: `${CATEGORY_COLORS[exp.category]}18`, border: `1px solid ${CATEGORY_COLORS[exp.category]}33` }}>
-                          <Receipt size={14} style={{ color: CATEGORY_COLORS[exp.category] }} />
+          {/* Expenses list — desktop/tablet */}
+          {!isMobile && (
+            <Card>
+              {loading ? (
+                <div className="divide-y" style={{ borderColor: 'var(--border-subtle)' }}>
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} className="flex items-center justify-between px-5 py-4 gap-4 animate-pulse">
+                      <div className="h-4 rounded w-48" style={{ background: 'var(--bg-elevated)' }} />
+                      <div className="h-4 rounded w-20" style={{ background: 'var(--bg-elevated)' }} />
+                    </div>
+                  ))}
+                </div>
+              ) : filtered.length === 0 ? (
+                <EmptyState icon={Receipt} title="No expenses found"
+                  description={search || categoryFilter.length ? 'Try adjusting your filters' : 'Add your first expense'}
+                  action={!search && !categoryFilter.length ? { label: 'Add Expense', onClick: () => setShowModal(true) } : undefined} />
+              ) : (
+                <div className="divide-y" style={{ borderColor: 'var(--border-subtle)' }}>
+                  {filtered.map((exp) => {
+                    const client = exp.client as { id?: string; name?: string } | undefined
+                    const deal = exp.deal as { id?: string; title?: string } | undefined
+                    const createdBy = exp.created_by_profile as { full_name?: string } | undefined
+                    return (
+                      <div key={exp.id} className="flex items-center justify-between px-5 py-3 gap-4"
+                        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-elevated)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+                        <div className="flex items-center gap-4 min-w-0">
+                          <div className="w-8 h-8 rounded flex items-center justify-center flex-shrink-0"
+                            style={{ background: `${CATEGORY_COLORS[exp.category]}18`, border: `1px solid ${CATEGORY_COLORS[exp.category]}33` }}>
+                            <Receipt size={14} style={{ color: CATEGORY_COLORS[exp.category] }} />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{exp.title}</p>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDate(exp.expense_date)}</span>
+                              {client?.name && <button onClick={() => navigate(`/clients/${client.id}`)} className="text-xs hover:underline" style={{ color: 'var(--text-muted)' }}>{client.name}</button>}
+                              {deal?.title && <button onClick={() => navigate(`/deals/${deal.id}`)} className="text-xs hover:underline" style={{ color: 'var(--text-muted)' }}>{deal.title}</button>}
+                              {createdBy?.full_name && <span className="text-xs" style={{ color: 'var(--text-muted)' }}>by {createdBy.full_name}</span>}
+                            </div>
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{exp.title}</p>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDate(exp.expense_date)}</span>
-                            {client?.name && (
-                              <button onClick={() => navigate(`/clients/${client.id}`)} className="text-xs hover:underline" style={{ color: 'var(--text-muted)' }}>
-                                {client.name}
-                              </button>
-                            )}
-                            {deal?.title && (
-                              <button onClick={() => navigate(`/deals/${deal.id}`)} className="text-xs hover:underline" style={{ color: 'var(--text-muted)' }}>
-                                {deal.title}
-                              </button>
-                            )}
-                            {createdBy?.full_name && (
-                              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>by {createdBy.full_name}</span>
-                            )}
+                        <div className="flex items-center gap-3 flex-shrink-0">
+                          <CategoryBadge category={exp.category} />
+                          <span style={{ fontFamily: 'DM Mono, monospace', color: 'var(--gold-primary)', fontSize: '13px', minWidth: '80px', textAlign: 'right' }}>
+                            {formatCurrency(exp.amount, exp.currency)}
+                          </span>
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => { setEditExpense(exp); setShowModal(true) }} className="text-xs px-2 py-1 rounded" style={{ color: 'var(--text-muted)' }}
+                              onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')} onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}>Edit</button>
+                            <button onClick={() => deleteExpense(exp.id, exp.title)} className="text-xs px-2 py-1 rounded" style={{ color: 'var(--text-muted)' }}
+                              onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--status-red)')} onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}>Delete</button>
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3 flex-shrink-0">
-                        <CategoryBadge category={exp.category} />
-                        <span style={{ fontFamily: 'DM Mono, monospace', color: 'var(--gold-primary)', fontSize: '13px', minWidth: '80px', textAlign: 'right' }}>
-                          {formatCurrency(exp.amount, exp.currency)}
-                        </span>
-                        <div className="flex items-center gap-1">
-                          <button onClick={() => { setEditExpense(exp); setShowModal(true) }}
-                            className="text-xs px-2 py-1 rounded"
-                            style={{ color: 'var(--text-muted)' }}
-                            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
-                            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}>Edit</button>
-                          <button onClick={() => deleteExpense(exp.id, exp.title)}
-                            className="text-xs px-2 py-1 rounded"
-                            style={{ color: 'var(--text-muted)' }}
-                            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--status-red)')}
-                            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}>Delete</button>
-                        </div>
+                    )
+                  })}
+                </div>
+              )}
+            </Card>
+          )}
+
+          {/* Expenses cards — mobile */}
+          {isMobile && (
+            <div className="space-y-2">
+              {loading ? (
+                Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="rounded-lg p-4 animate-pulse" style={{ background: 'var(--bg-surface)', height: 80 }} />
+                ))
+              ) : filtered.length === 0 ? (
+                <EmptyState icon={Receipt} title="No expenses found"
+                  description={search || categoryFilter.length ? 'Try adjusting filters' : 'Add your first expense'} />
+              ) : filtered.map((exp) => (
+                <div key={exp.id} className="rounded-lg p-4"
+                  style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)' }}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-start gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded flex items-center justify-center flex-shrink-0 mt-0.5"
+                        style={{ background: `${CATEGORY_COLORS[exp.category]}18`, border: `1px solid ${CATEGORY_COLORS[exp.category]}33` }}>
+                        <Receipt size={13} style={{ color: CATEGORY_COLORS[exp.category] }} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{exp.title}</p>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDate(exp.expense_date)}</p>
                       </div>
                     </div>
-                  )
-                })}
-              </div>
-            )}
-          </Card>
+                    <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                      <CategoryBadge category={exp.category} />
+                      <span style={{ fontFamily: 'DM Mono, monospace', color: 'var(--gold-primary)', fontSize: '13px', fontWeight: 600 }}>
+                        {formatCurrency(exp.amount, exp.currency)}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-2 mt-2">
+                    <button onClick={() => { setEditExpense(exp); setShowModal(true) }}
+                      className="text-xs px-3 py-1.5 rounded"
+                      style={{ color: 'var(--text-muted)', border: '1px solid var(--border-default)' }}>Edit</button>
+                    <button onClick={() => deleteExpense(exp.id, exp.title)}
+                      className="text-xs px-3 py-1.5 rounded"
+                      style={{ color: 'var(--status-red)', border: '1px solid rgba(224,82,82,0.2)' }}>Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Mobile FAB */}
+          <button
+            className="fixed bottom-6 right-6 w-14 h-14 rounded-full flex items-center justify-center shadow-2xl z-20 md:hidden"
+            style={{ background: 'var(--gold-primary)', color: '#0A0A0A' }}
+            onClick={() => { setEditExpense(null); setShowModal(true) }}>
+            <Plus size={22} />
+          </button>
         </>
       )}
 
@@ -447,7 +488,7 @@ function ProfitEstimate() {
       <h3 className="text-xs font-medium uppercase tracking-wider mb-4" style={{ color: 'var(--text-muted)' }}>
         Profit Estimate — {new Date().getFullYear()}
       </h3>
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
         {[
           { label: 'Revenue Collected', value: data.invoiced, color: 'var(--status-green)' },
           { label: 'Total Expenses', value: data.expenses, color: 'var(--status-red)' },

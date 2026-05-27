@@ -90,45 +90,47 @@ export default function ClientDetailPage() {
         <ArrowLeft size={14} /> Back to Clients
       </button>
 
-      <Card className="p-5">
-        <div className="flex items-start justify-between gap-4">
+      <Card className="p-4 md:p-5">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-full flex items-center justify-center text-lg font-semibold"
+            <div className="w-12 h-12 md:w-14 md:h-14 rounded-full flex items-center justify-center text-base md:text-lg font-semibold flex-shrink-0"
               style={{ background: 'var(--gold-muted)', color: 'var(--gold-primary)', border: '2px solid var(--gold-dark)', fontFamily: 'DM Mono, monospace' }}>
               {initials}
             </div>
             <div>
-              <h1 className="text-2xl font-light mb-1" style={{ fontFamily: 'Cormorant Garamond, serif', color: 'var(--text-primary)' }}>
+              <h1 className="text-xl md:text-2xl font-light mb-1" style={{ fontFamily: 'Cormorant Garamond, serif', color: 'var(--text-primary)' }}>
                 {client.name}
               </h1>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 {client.company && <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{client.company}</span>}
                 <ClientStatusBadge status={client.status} />
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 overflow-x-auto">
             <Button variant="secondary" size="sm" onClick={() => setShowEditModal(true)}><Edit size={13} /> Edit</Button>
-            <Button size="sm" onClick={() => navigate(`/deals?client=${id}`)}><Plus size={13} /> New Deal</Button>
-            <Button size="sm" variant="secondary" onClick={() => navigate(`/invoices/new?client=${id}`)}><FileText size={13} /> New Invoice</Button>
+            <Button size="sm" onClick={() => navigate(`/deals?client=${id}`)}><Plus size={13} /> Deal</Button>
+            <Button size="sm" variant="secondary" onClick={() => navigate(`/invoices/new?client=${id}`)}><FileText size={13} /> Invoice</Button>
           </div>
         </div>
       </Card>
 
-      <div className="flex gap-1" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-        {tabs.map(({ key, label }) => (
-          <button key={key} onClick={() => setActiveTab(key)}
-            className="px-4 py-2.5 text-sm relative transition-colors"
-            style={{ color: activeTab === key ? 'var(--gold-primary)' : 'var(--text-muted)' }}>
-            {label}
-            {activeTab === key && <span className="absolute bottom-0 left-0 right-0 h-0.5" style={{ background: 'var(--gold-primary)' }} />}
-          </button>
-        ))}
+      <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+        <div className="flex gap-1 min-w-max md:min-w-0">
+          {tabs.map(({ key, label }) => (
+            <button key={key} onClick={() => setActiveTab(key)}
+              className="px-3 md:px-4 py-2.5 text-xs md:text-sm relative transition-colors whitespace-nowrap"
+              style={{ color: activeTab === key ? 'var(--gold-primary)' : 'var(--text-muted)' }}>
+              {label}
+              {activeTab === key && <span className="absolute bottom-0 left-0 right-0 h-0.5" style={{ background: 'var(--gold-primary)' }} />}
+            </button>
+          ))}
+        </div>
       </div>
 
       {activeTab === 'overview' && (
-        <div className="grid grid-cols-3 gap-4">
-          <div className="col-span-2">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="col-span-1 lg:col-span-2">
             <Card className="p-5">
               <h3 className="text-xs font-medium uppercase tracking-wider mb-4" style={{ color: 'var(--text-muted)' }}>Contact Information</h3>
               <div className="space-y-3">

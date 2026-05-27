@@ -4,7 +4,8 @@ import {
   useReactTable, getCoreRowModel, getSortedRowModel,
   createColumnHelper, type SortingState,
 } from '@tanstack/react-table'
-import { Plus, LayoutGrid, List, MoreHorizontal, GripVertical } from 'lucide-react'
+import { Plus, LayoutGrid, List, MoreHorizontal, GripVertical, ChevronLeft, ChevronRight } from 'lucide-react'
+import { useIsMobile } from '@/hooks/useIsMobile'
 import { supabase } from '@/lib/supabase'
 import { logActivity } from '@/lib/activityLogger'
 import { useAuth } from '@/store/authStore'
@@ -63,6 +64,10 @@ export default function DealsPage() {
   // Drag state
   const dragId = useRef<string | null>(null)
   const [dragOver, setDragOver] = useState<DealStage | null>(null)
+  // Mobile kanban: one stage at a time
+  const [mobileStageIdx, setMobileStageIdx] = useState(0)
+  const [moveMenuOpen, setMoveMenuOpen] = useState<string | null>(null)
+  const isMobile = useIsMobile()
 
   useEffect(() => {
     fetchDeals()
@@ -251,19 +256,22 @@ export default function DealsPage() {
     getSortedRowModel: getSortedRowModel(),
   })
 
+  const mobileStage = STAGES[mobileStageIdx]
+  const mobileStageDeals = filtered.filter((d) => d.stage === mobileStage)
+
   return (
-    <div className="space-y-4" onClick={() => setMenuOpen(null)}>
+    <div className="space-y-4" onClick={() => { setMenuOpen(null); setMoveMenuOpen(null) }}>
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <h1 className="text-xl font-medium" style={{ color: 'var(--text-primary)' }}>Deals</h1>
-          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+        <div className="flex items-center gap-3 md:gap-4">
+          <h1 className="text-lg md:text-xl font-medium" style={{ color: 'var(--text-primary)' }}>Deals</h1>
+          <span className="text-xs hidden md:block" style={{ color: 'var(--text-muted)' }}>
             <span style={{ fontFamily: 'DM Mono, monospace', color: 'var(--text-primary)' }}>{deals.length}</span> total
           </span>
         </div>
         <div className="flex items-center gap-3">
-          {/* View toggle */}
-          <div className="flex rounded overflow-hidden" style={{ border: '1px solid var(--border-default)' }}>
+          {/* View toggle — hidden on mobile */}
+          <div className="hidden md:flex rounded overflow-hidden" style={{ border: '1px solid var(--border-default)' }}>
             {(['kanban', 'table'] as ViewMode[]).map((v) => (
               <button key={v} onClick={() => setView(v)}
                 className="px-3 py-1.5 flex items-center gap-1.5 text-xs transition-colors"
@@ -276,7 +284,7 @@ export default function DealsPage() {
               </button>
             ))}
           </div>
-          <Button onClick={() => { setEditDeal(null); setShowModal(true) }}>
+          <Button onClick={() => { setEditDeal(null); setShowModal(true) }} className="hidden md:flex">
             <Plus size={14} /> New Deal
           </Button>
         </div>
@@ -284,29 +292,118 @@ export default function DealsPage() {
 
       {/* Filters */}
       <Card>
-        <div className="flex items-center gap-3 px-4 py-3">
+        <div className="flex items-center gap-2 md:gap-3 px-4 py-3">
           <input placeholder="Search deals…" value={search} onChange={(e) => setSearch(e.target.value)}
             className="flex-1 px-3 py-2 rounded text-sm outline-none"
             style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }}
             onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--gold-primary)')}
             onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border-default)')} />
-          <select value={stageFilter} onChange={(e) => setStageFilter(e.target.value)}
-            className="px-3 py-2 rounded text-sm outline-none"
-            style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: stageFilter ? 'var(--text-primary)' : 'var(--text-muted)' }}>
-            <option value="">All stages</option>
-            {STAGES.map((s) => <option key={s} value={s}>{STAGE_LABELS[s]}</option>)}
-          </select>
-          <select value={assignedFilter} onChange={(e) => setAssignedFilter(e.target.value)}
-            className="px-3 py-2 rounded text-sm outline-none"
-            style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: assignedFilter ? 'var(--text-primary)' : 'var(--text-muted)' }}>
-            <option value="">All team members</option>
-            {profiles.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}
-          </select>
+          <div className="hidden md:flex items-center gap-2">
+            <select value={stageFilter} onChange={(e) => setStageFilter(e.target.value)}
+              className="px-3 py-2 rounded text-sm outline-none"
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: stageFilter ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+              <option value="">All stages</option>
+              {STAGES.map((s) => <option key={s} value={s}>{STAGE_LABELS[s]}</option>)}
+            </select>
+            <select value={assignedFilter} onChange={(e) => setAssignedFilter(e.target.value)}
+              className="px-3 py-2 rounded text-sm outline-none"
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: assignedFilter ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+              <option value="">All team members</option>
+              {profiles.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+            </select>
+          </div>
         </div>
       </Card>
 
-      {/* KANBAN VIEW */}
-      {view === 'kanban' && (
+      {/* MOBILE KANBAN: single stage with nav */}
+      {isMobile && (
+        <div>
+          {/* Stage selector */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-2 mb-3" style={{ scrollbarWidth: 'none' }}>
+            {STAGES.map((s, i) => {
+              const colors = STAGE_COLORS[s]
+              const isActive = i === mobileStageIdx
+              return (
+                <button key={s} onClick={() => setMobileStageIdx(i)}
+                  className="px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap flex-shrink-0"
+                  style={{
+                    background: isActive ? colors.bg : 'var(--bg-elevated)',
+                    color: isActive ? colors.text : 'var(--text-muted)',
+                    border: `1px solid ${isActive ? colors.border : 'var(--border-subtle)'}`,
+                  }}>
+                  {STAGE_LABELS[s]} ({filtered.filter(d => d.stage === s).length})
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Stage nav arrows + label */}
+          <div className="flex items-center justify-between mb-2">
+            <button onClick={() => setMobileStageIdx(i => Math.max(0, i - 1))} disabled={mobileStageIdx === 0}
+              className="w-9 h-9 rounded flex items-center justify-center disabled:opacity-30"
+              style={{ color: 'var(--text-muted)' }}>
+              <ChevronLeft size={18} />
+            </button>
+            <p className="text-xs" style={{ fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>
+              {mobileStageDeals.length} deal{mobileStageDeals.length !== 1 ? 's' : ''}
+            </p>
+            <button onClick={() => setMobileStageIdx(i => Math.min(STAGES.length - 1, i + 1))} disabled={mobileStageIdx === STAGES.length - 1}
+              className="w-9 h-9 rounded flex items-center justify-center disabled:opacity-30"
+              style={{ color: 'var(--text-muted)' }}>
+              <ChevronRight size={18} />
+            </button>
+          </div>
+
+          {/* Cards for selected stage */}
+          <div className="space-y-2">
+            {mobileStageDeals.length === 0 ? (
+              <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>No deals in this stage</p>
+            ) : mobileStageDeals.map((deal) => {
+              const client = deal.client as { name?: string } | undefined
+              const colors = STAGE_COLORS[deal.stage]
+              return (
+                <div key={deal.id}
+                  className="rounded-lg p-4"
+                  style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)' }}
+                  onClick={() => navigate(`/deals/${deal.id}`)}>
+                  {client?.name && <p className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>{client.name}</p>}
+                  <p className="font-medium text-sm mb-2" style={{ color: 'var(--text-primary)' }}>{deal.title}</p>
+                  <div className="flex items-center justify-between">
+                    <span style={{ fontFamily: 'DM Mono, monospace', color: colors.text, fontSize: '13px' }}>
+                      {formatCurrency(deal.value, deal.currency)}
+                    </span>
+                    {/* Move button */}
+                    <div className="relative" onClick={(e) => e.stopPropagation()}>
+                      <button onClick={(e) => { e.stopPropagation(); setMoveMenuOpen(moveMenuOpen === deal.id ? null : deal.id) }}
+                        className="px-3 py-1.5 rounded text-xs"
+                        style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-muted)' }}>
+                        Move ▾
+                      </button>
+                      {moveMenuOpen === deal.id && (
+                        <div className="absolute right-0 bottom-9 w-36 rounded shadow-lg z-20 py-1"
+                          style={{ background: 'var(--bg-overlay)', border: '1px solid var(--border-default)' }}>
+                          {STAGES.filter(s => s !== deal.stage).map((s) => (
+                            <button key={s} onClick={() => { updateDealStage(deal.id, s); setMoveMenuOpen(null) }}
+                              className="w-full text-left px-3 py-2 text-xs"
+                              style={{ color: STAGE_COLORS[s].text }}
+                              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-elevated)' }}
+                              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
+                              {STAGE_LABELS[s]}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* DESKTOP/TABLET KANBAN VIEW */}
+      {!isMobile && view === 'kanban' && (
         <div className="flex gap-3 overflow-x-auto pb-2">
           {columns_by_stage.map(({ stage, deals: stageDeals, total }) => {
             const colors = STAGE_COLORS[stage]
@@ -433,7 +530,7 @@ export default function DealsPage() {
       )}
 
       {/* TABLE VIEW */}
-      {view === 'table' && (
+      {!isMobile && view === 'table' && (
         <Card>
           {loading ? (
             <table className="w-full"><tbody>{Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={7} />)}</tbody></table>
@@ -446,6 +543,14 @@ export default function DealsPage() {
           )}
         </Card>
       )}
+
+      {/* Mobile FAB */}
+      <button
+        className="fixed bottom-6 right-6 w-14 h-14 rounded-full flex items-center justify-center shadow-2xl z-20 md:hidden"
+        style={{ background: 'var(--gold-primary)', color: '#0A0A0A' }}
+        onClick={() => { setEditDeal(null); setShowModal(true) }}>
+        <Plus size={22} />
+      </button>
 
       <DealFormModal
         isOpen={showModal}

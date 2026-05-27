@@ -8,7 +8,8 @@ import {
   createColumnHelper,
   type SortingState,
 } from '@tanstack/react-table'
-import { Users, MoreHorizontal, Plus } from 'lucide-react'
+import { Users, MoreHorizontal, Plus, ChevronDown } from 'lucide-react'
+import { useIsMobile } from '@/hooks/useIsMobile'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/store/authStore'
 import type { Client, Profile } from '@/types'
@@ -38,6 +39,8 @@ export default function ClientsPage() {
   const [showModal, setShowModal] = useState(false)
   const [editClient, setEditClient] = useState<Client | null>(null)
   const [menuOpen, setMenuOpen] = useState<string | null>(null)
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const isMobile = useIsMobile()
 
   useEffect(() => {
     fetchClients()
@@ -206,54 +209,135 @@ export default function ClientsPage() {
 
   return (
     <div className="space-y-4" onClick={() => setMenuOpen(null)}>
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-6">
-          <h1 className="text-xl font-medium" style={{ color: 'var(--text-primary)' }}>Clients</h1>
-          <div className="flex items-center gap-4 text-xs" style={{ color: 'var(--text-muted)' }}>
+        <div className="flex items-center gap-3 md:gap-6">
+          <h1 className="text-lg md:text-xl font-medium" style={{ color: 'var(--text-primary)' }}>Clients</h1>
+          <div className="hidden md:flex items-center gap-4 text-xs" style={{ color: 'var(--text-muted)' }}>
             <span><span style={{ color: 'var(--text-primary)', fontFamily: 'DM Mono, monospace' }}>{clients.length}</span> total</span>
             <span><span style={{ color: 'var(--status-green)', fontFamily: 'DM Mono, monospace' }}>{clients.filter(c => c.status === 'active').length}</span> active</span>
             <span><span style={{ color: 'var(--status-blue)', fontFamily: 'DM Mono, monospace' }}>{clients.filter(c => c.status === 'lead').length}</span> leads</span>
           </div>
         </div>
-        <Button onClick={() => { setEditClient(null); setShowModal(true) }}>
-          <Plus size={14} />
-          New Client
+        <Button onClick={() => { setEditClient(null); setShowModal(true) }} className="hidden md:flex">
+          <Plus size={14} /> New Client
         </Button>
       </div>
 
+      {/* Filters */}
       <Card>
-        <div className="flex items-center gap-3 px-4 py-3">
-          <input placeholder="Search name, company, email…" value={search} onChange={(e) => setSearch(e.target.value)}
-            className="flex-1 px-3 py-2 rounded text-sm outline-none"
-            style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }}
-            onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--gold-primary)')}
-            onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border-default)')} />
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-2 rounded text-sm outline-none"
-            style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: statusFilter ? 'var(--text-primary)' : 'var(--text-muted)' }}>
-            <option value="">All statuses</option>
-            {['active','inactive','lead','churned'].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>)}
-          </select>
-          <select value={assignedFilter} onChange={(e) => setAssignedFilter(e.target.value)}
-            className="px-3 py-2 rounded text-sm outline-none"
-            style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: assignedFilter ? 'var(--text-primary)' : 'var(--text-muted)' }}>
-            <option value="">All team members</option>
-            {profiles.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}
-          </select>
+        <div className="px-4 py-3">
+          <div className="flex items-center gap-2">
+            <input placeholder="Search name, company, email…" value={search} onChange={(e) => setSearch(e.target.value)}
+              className="flex-1 px-3 py-2 rounded text-sm outline-none"
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }}
+              onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--gold-primary)')}
+              onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border-default)')} />
+            {/* Filters toggle on mobile */}
+            <button onClick={() => setFiltersOpen((v) => !v)}
+              className="flex items-center gap-1 px-3 py-2 rounded text-sm md:hidden flex-shrink-0"
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-muted)' }}>
+              Filters <ChevronDown size={13} className={filtersOpen ? 'rotate-180' : ''} />
+            </button>
+            {/* Desktop: always show selects */}
+            <div className="hidden md:flex items-center gap-2">
+              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
+                className="px-3 py-2 rounded text-sm outline-none"
+                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: statusFilter ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                <option value="">All statuses</option>
+                {['active','inactive','lead','churned'].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>)}
+              </select>
+              <select value={assignedFilter} onChange={(e) => setAssignedFilter(e.target.value)}
+                className="px-3 py-2 rounded text-sm outline-none"
+                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: assignedFilter ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                <option value="">All team members</option>
+                {profiles.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+              </select>
+            </div>
+          </div>
+          {/* Mobile expanded filters */}
+          {filtersOpen && (
+            <div className="mt-2 grid grid-cols-2 gap-2 md:hidden">
+              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
+                className="px-3 py-2 rounded text-sm outline-none"
+                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: statusFilter ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                <option value="">All statuses</option>
+                {['active','inactive','lead','churned'].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>)}
+              </select>
+              <select value={assignedFilter} onChange={(e) => setAssignedFilter(e.target.value)}
+                className="px-3 py-2 rounded text-sm outline-none"
+                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: assignedFilter ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                <option value="">All team</option>
+                {profiles.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+              </select>
+            </div>
+          )}
         </div>
       </Card>
 
-      <Card>
-        {loading ? (
-          <table className="w-full"><tbody>{Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={8} />)}</tbody></table>
-        ) : filtered.length === 0 ? (
-          <EmptyState icon={Users} title="No clients found"
-            description={search || statusFilter ? 'Try adjusting your filters' : 'Add your first client to get started'}
-            action={!search && !statusFilter ? { label: 'New Client', onClick: () => setShowModal(true) } : undefined} />
-        ) : (
-          <Table table={table} onRowClick={(row) => navigate(`/clients/${row.id}`)} />
-        )}
-      </Card>
+      {/* Table (tablet+) */}
+      {!isMobile && (
+        <Card>
+          {loading ? (
+            <table className="w-full"><tbody>{Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={8} />)}</tbody></table>
+          ) : filtered.length === 0 ? (
+            <EmptyState icon={Users} title="No clients found"
+              description={search || statusFilter ? 'Try adjusting your filters' : 'Add your first client to get started'}
+              action={!search && !statusFilter ? { label: 'New Client', onClick: () => setShowModal(true) } : undefined} />
+          ) : (
+            <Table table={table} onRowClick={(row) => navigate(`/clients/${row.id}`)} />
+          )}
+        </Card>
+      )}
+
+      {/* Card list (mobile) */}
+      {isMobile && (
+        <div className="space-y-2">
+          {loading ? (
+            Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="rounded-lg p-4 animate-pulse" style={{ background: 'var(--bg-surface)', height: 80 }} />
+            ))
+          ) : filtered.length === 0 ? (
+            <EmptyState icon={Users} title="No clients found"
+              description={search || statusFilter ? 'Try adjusting your filters' : 'Add your first client'} />
+          ) : (
+            filtered.map((c) => {
+              const initials = c.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
+              const ap = c.assigned_profile
+              return (
+                <div key={c.id}
+                  className="rounded-lg p-4 flex items-center gap-3 active:opacity-70"
+                  style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)' }}
+                  onClick={() => navigate(`/clients/${c.id}`)}>
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0"
+                    style={{ background: 'var(--gold-muted)', color: 'var(--gold-primary)', fontFamily: 'DM Mono, monospace' }}>
+                    {initials}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-medium text-sm truncate" style={{ color: 'var(--text-primary)' }}>{c.name}</p>
+                      <ClientStatusBadge status={c.status} />
+                    </div>
+                    {c.company && <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{c.company}</p>}
+                    <div className="flex items-center gap-3 mt-1">
+                      {c.phone && <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{c.phone}</p>}
+                      {ap && <p className="text-xs" style={{ color: 'var(--text-muted)' }}>→ {ap.full_name}</p>}
+                    </div>
+                  </div>
+                </div>
+              )
+            })
+          )}
+        </div>
+      )}
+
+      {/* Mobile FAB */}
+      <button
+        className="fixed bottom-6 right-6 w-14 h-14 rounded-full flex items-center justify-center shadow-2xl z-20 md:hidden"
+        style={{ background: 'var(--gold-primary)', color: '#0A0A0A' }}
+        onClick={() => { setEditClient(null); setShowModal(true) }}>
+        <Plus size={22} />
+      </button>
 
       <ClientFormModal
         isOpen={showModal}

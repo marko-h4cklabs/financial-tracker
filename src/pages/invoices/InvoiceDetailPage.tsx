@@ -75,7 +75,7 @@ export default function InvoiceDetailPage() {
           <ArrowLeft size={14} /> Back to Invoices
         </button>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center flex-wrap gap-2">
           <button onClick={() => window.print()} className="flex items-center gap-2 text-xs px-3 py-1.5 rounded"
             style={{ color: 'var(--text-muted)', border: '1px solid var(--border-default)' }}
             onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
@@ -110,7 +110,7 @@ export default function InvoiceDetailPage() {
         margin: '0 auto',
       }}>
         {/* Header */}
-        <div className="px-8 py-6 flex items-start justify-between" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+        <div className="px-4 md:px-8 py-4 md:py-6 flex flex-col md:flex-row items-start gap-3 md:gap-0 justify-between" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
           <div>
             <h1 className="text-3xl font-light tracking-widest uppercase"
               style={{ fontFamily: 'Cormorant Garamond, serif', color: 'var(--gold-primary)' }}>
@@ -139,9 +139,9 @@ export default function InvoiceDetailPage() {
           </div>
         </div>
 
-        <div className="px-8 py-6 space-y-6">
+        <div className="px-4 md:px-8 py-4 md:py-6 space-y-6">
           {/* Bill To + Title */}
-          <div className="grid grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8">
             {client && (
               <div>
                 <p className="text-[10px] uppercase tracking-wider mb-2" style={{ color: 'var(--text-muted)' }}>Bill To</p>
@@ -159,7 +159,8 @@ export default function InvoiceDetailPage() {
           </div>
 
           {/* Line items table */}
-          <table className="w-full text-sm border-collapse">
+          <div className="overflow-x-auto -mx-4 md:mx-0 px-4 md:px-0">
+          <table className="w-full text-sm border-collapse min-w-[400px]">
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border-default)' }}>
                 {['Description', 'Qty', 'Unit Price', 'Amount'].map((h, i) => (
@@ -179,10 +180,11 @@ export default function InvoiceDetailPage() {
               ))}
             </tbody>
           </table>
+          </div>
 
           {/* Totals */}
           <div className="flex justify-end">
-            <div className="w-56 space-y-2">
+            <div className="w-full md:w-56 space-y-2">
               <div className="flex justify-between text-sm">
                 <span style={{ color: 'var(--text-muted)' }}>Subtotal</span>
                 <span style={{ fontFamily: 'DM Mono, monospace', color: 'var(--text-secondary)' }}>{formatCurrency(invoice.subtotal, invoice.currency)}</span>

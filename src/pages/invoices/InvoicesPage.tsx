@@ -17,6 +17,7 @@ import StatCard from '@/components/ui/StatCard'
 import { InvoiceStatusBadge } from '@/components/ui/Badge'
 import EmptyState from '@/components/ui/EmptyState'
 import { SkeletonRow, SkeletonCard } from '@/components/ui/Skeleton'
+import { useIsMobile } from '@/hooks/useIsMobile'
 import toast from 'react-hot-toast'
 
 type EnrichedInvoice = Invoice & { client?: Client }
@@ -34,6 +35,7 @@ export default function InvoicesPage() {
   const [clientFilter, setClientFilter] = useState('')
   const [sorting, setSorting] = useState<SortingState>([])
   const [kpis, setKpis] = useState({ totalInvoiced: 0, paidThisMonth: 0, pending: 0, overdue: 0 })
+  const isMobile = useIsMobile()
 
   useEffect(() => { fetchInvoices(); fetchClients(); fetchKpis() }, [])
 
@@ -219,11 +221,12 @@ export default function InvoicesPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-medium" style={{ color: 'var(--text-primary)' }}>Invoices</h1>
-        <Button onClick={() => navigate('/invoices/new')}><Plus size={14} /> New Invoice</Button>
+        <h1 className="text-lg md:text-xl font-medium" style={{ color: 'var(--text-primary)' }}>Invoices</h1>
+        <Button onClick={() => navigate('/invoices/new')} className="hidden md:flex"><Plus size={14} /> New Invoice</Button>
       </div>
 
-      <div className="grid grid-cols-4 gap-4">
+      {/* KPI row: 2×2 on mobile, 4 on desktop */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         {kpiLoading
           ? Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
           : <>
@@ -236,9 +239,9 @@ export default function InvoicesPage() {
       </div>
 
       <Card>
-        <div className="flex items-center gap-3 px-4 py-3">
+        <div className="flex items-center gap-2 md:gap-3 px-4 py-3 flex-wrap">
           <input placeholder="Search invoice #, title, client…" value={search} onChange={(e) => setSearch(e.target.value)}
-            className="flex-1 px-3 py-2 rounded text-sm outline-none"
+            className="flex-1 min-w-[140px] px-3 py-2 rounded text-sm outline-none"
             style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }}
             onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--gold-primary)')}
             onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border-default)')} />
@@ -251,7 +254,7 @@ export default function InvoicesPage() {
             ))}
           </select>
           <select value={clientFilter} onChange={(e) => setClientFilter(e.target.value)}
-            className="px-3 py-2 rounded text-sm outline-none"
+            className="hidden md:block px-3 py-2 rounded text-sm outline-none"
             style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: clientFilter ? 'var(--text-primary)' : 'var(--text-muted)' }}>
             <option value="">All clients</option>
             {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -259,17 +262,78 @@ export default function InvoicesPage() {
         </div>
       </Card>
 
-      <Card>
-        {loading ? (
-          <table className="w-full"><tbody>{Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} cols={7} />)}</tbody></table>
-        ) : filtered.length === 0 ? (
-          <EmptyState icon={FileText} title="No invoices found"
-            description={search || statusFilter ? 'Try adjusting your filters' : 'Create your first invoice'}
-            action={!search && !statusFilter ? { label: 'New Invoice', onClick: () => navigate('/invoices/new') } : undefined} />
-        ) : (
-          <Table table={table} onRowClick={(row) => navigate(`/invoices/${row.id}`)} />
-        )}
-      </Card>
+      {/* Table (tablet+) */}
+      {!isMobile && (
+        <Card>
+          {loading ? (
+            <table className="w-full"><tbody>{Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} cols={7} />)}</tbody></table>
+          ) : filtered.length === 0 ? (
+            <EmptyState icon={FileText} title="No invoices found"
+              description={search || statusFilter ? 'Try adjusting your filters' : 'Create your first invoice'}
+              action={!search && !statusFilter ? { label: 'New Invoice', onClick: () => navigate('/invoices/new') } : undefined} />
+          ) : (
+            <Table table={table} onRowClick={(row) => navigate(`/invoices/${row.id}`)} />
+          )}
+        </Card>
+      )}
+
+      {/* Mobile card list */}
+      {isMobile && (
+        <div className="space-y-2">
+          {loading ? (
+            Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="rounded-lg p-4 animate-pulse" style={{ background: 'var(--bg-surface)', height: 88 }} />
+            ))
+          ) : filtered.length === 0 ? (
+            <EmptyState icon={FileText} title="No invoices found"
+              description={search || statusFilter ? 'Try adjusting your filters' : 'Create your first invoice'} />
+          ) : filtered.map((inv) => {
+            const client = inv.client as { name?: string } | undefined
+            const isOverdue = inv.status === 'overdue'
+            return (
+              <div key={inv.id}
+                className="rounded-lg p-4 active:opacity-70"
+                style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)' }}
+                onClick={() => navigate(`/invoices/${inv.id}`)}>
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div>
+                    <p style={{ fontFamily: 'DM Mono, monospace', color: 'var(--gold-primary)', fontSize: '13px', fontWeight: 500 }}>
+                      {inv.invoice_number}
+                    </p>
+                    <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{client?.name ?? '—'}</p>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    <InvoiceStatusBadge status={inv.status} />
+                    <span style={{ fontFamily: 'DM Mono, monospace', color: 'var(--gold-primary)', fontSize: '14px', fontWeight: 600 }}>
+                      {formatCurrency(inv.total, inv.currency)}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs" style={{ color: isOverdue ? 'var(--status-red)' : 'var(--text-muted)' }}>
+                    Due {formatDate(inv.due_date)}
+                  </p>
+                  {(inv.status === 'sent' || inv.status === 'overdue') && (
+                    <button onClick={(e) => { e.stopPropagation(); markAsPaid(inv) }}
+                      className="text-xs px-3 py-1.5 rounded"
+                      style={{ color: 'var(--status-green)', border: '1px solid rgba(76,175,125,0.3)', background: 'rgba(76,175,125,0.08)' }}>
+                      Mark Paid
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Mobile FAB */}
+      <button
+        className="fixed bottom-6 right-6 w-14 h-14 rounded-full flex items-center justify-center shadow-2xl z-20 md:hidden"
+        style={{ background: 'var(--gold-primary)', color: '#0A0A0A' }}
+        onClick={() => navigate('/invoices/new')}>
+        <Plus size={22} />
+      </button>
     </div>
   )
 }
