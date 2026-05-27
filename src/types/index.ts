@@ -32,7 +32,7 @@ export interface Client {
   assigned_profile?: Profile
 }
 
-export type DealStage = 'lead' | 'proposal' | 'negotiation' | 'won' | 'lost' | 'paused'
+export type DealStage = 'proposal' | 'won' | 'lost'
 
 export interface Deal {
   id: string
@@ -40,6 +40,7 @@ export interface Deal {
   title: string
   description: string | null
   stage: DealStage
+  deal_type: 'one_time' | 'retainer'
   value: number
   currency: string
   start_date: string | null
@@ -51,6 +52,11 @@ export interface Deal {
   tags: string[] | null
   created_at: string
   updated_at: string
+  // retainer fields
+  retainer_amount: number | null
+  retainer_billing_day: number | null
+  retainer_start_date: string | null
+  retainer_end_date: string | null
   // joined
   client?: Client
   assigned_profile?: Profile

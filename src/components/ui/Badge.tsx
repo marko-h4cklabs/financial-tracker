@@ -32,12 +32,9 @@ export function Badge({ children, variant = 'default', size = 'sm' }: BadgeProps
 
 export function DealStageBadge({ stage }: { stage: DealStage }) {
   const map: Record<DealStage, { label: string; variant: BadgeVariant }> = {
-    lead: { label: 'Lead', variant: 'info' },
-    proposal: { label: 'Proposal', variant: 'purple' },
-    negotiation: { label: 'Negotiation', variant: 'warning' },
+    proposal: { label: 'Proposal', variant: 'info' },
     won: { label: 'Won', variant: 'success' },
     lost: { label: 'Lost', variant: 'danger' },
-    paused: { label: 'Paused', variant: 'muted' },
   }
   const { label, variant } = map[stage]
   return <Badge variant={variant}>{label}</Badge>

@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Edit, Plus, CheckCircle, ChevronRight } from 'lucide-react'
-import { format } from 'date-fns'
+import { ArrowLeft, Edit, Plus, CheckCircle, ChevronRight, Repeat } from 'lucide-react'
+import { format, addMonths, differenceInMonths } from 'date-fns'
 import { supabase } from '@/lib/supabase'
 import { logActivity } from '@/lib/activityLogger'
 import { formatCurrency, formatDate, formatRelativeDate } from '@/lib/formatters'
@@ -17,11 +17,12 @@ import toast from 'react-hot-toast'
 
 type Tab = 'overview' | 'installments' | 'invoices' | 'expenses' | 'activity'
 
-const STAGE_STEPS: DealStage[] = ['lead', 'proposal', 'negotiation', 'won']
+const STAGE_STEPS: DealStage[] = ['proposal', 'won']
 
 const STAGE_LABELS: Record<DealStage, string> = {
-  lead: 'Lead', proposal: 'Proposal', negotiation: 'Negotiation',
-  won: 'Won', lost: 'Lost', paused: 'Paused',
+  proposal: 'Proposal',
+  won: 'Won',
+  lost: 'Lost',
 }
 
 export default function DealDetailPage() {
@@ -42,6 +43,7 @@ export default function DealDetailPage() {
   const [showInstallmentModal, setShowInstallmentModal] = useState(false)
   const [editInstallment, setEditInstallment] = useState<Installment | null>(null)
   const [markingPaid, setMarkingPaid] = useState<string | null>(null)
+  const [generatingInstallments, setGeneratingInstallments] = useState(false)
 
   const fetchDeal = useCallback(async () => {
     if (!id) return
@@ -76,6 +78,45 @@ export default function DealDetailPage() {
     await logActivity({ entity_type: 'deal', entity_id: id, action: 'status_change', description: `Stage changed to ${STAGE_LABELS[newStage]}` })
     setDeal((prev) => prev ? { ...prev, stage: newStage } : prev)
     toast.success(`Stage updated to ${STAGE_LABELS[newStage]}`)
+  }
+
+  async function generateRetainerInstallments() {
+    if (!deal?.retainer_amount || !deal?.retainer_start_date) {
+      toast.error('Missing retainer details'); return
+    }
+    if (!confirm('Generate monthly installments for this retainer? Existing installments will not be affected.')) return
+    setGeneratingInstallments(true)
+
+    const startDate = new Date(deal.retainer_start_date)
+    const endDate = deal.retainer_end_date ? new Date(deal.retainer_end_date) : addMonths(startDate, 11)
+    const billingDay = deal.retainer_billing_day ?? 1
+
+    const toCreate = []
+    let current = startDate
+    while (current <= endDate) {
+      const year = current.getFullYear()
+      const month = current.getMonth()
+      const lastDay = new Date(year, month + 1, 0).getDate()
+      const dueDate = format(new Date(year, month, Math.min(billingDay, lastDay)), 'yyyy-MM-dd')
+      toCreate.push({
+        deal_id: deal.id,
+        client_id: deal.client_id,
+        title: `Retainer — ${format(current, 'MMMM yyyy')}`,
+        amount: deal.retainer_amount,
+        currency: deal.currency,
+        due_date: dueDate,
+        status: 'pending',
+        created_by: profile?.id ?? null,
+      })
+      current = addMonths(current, 1)
+    }
+
+    const { error } = await supabase.from('installments').insert(toCreate)
+    setGeneratingInstallments(false)
+    if (error) { toast.error('Failed to generate installments'); return }
+    await logActivity({ entity_type: 'deal', entity_id: deal.id, action: 'create', description: `Generated ${toCreate.length} retainer installments` })
+    toast.success(`Generated ${toCreate.length} installments`)
+    fetchDeal()
   }
 
   async function markInstallmentPaid(instId: string) {
@@ -155,41 +196,64 @@ export default function DealDetailPage() {
           </div>
         </div>
 
-        {/* Stage progress tracker — horizontally scrollable on mobile */}
-        {!['lost', 'paused'].includes(deal.stage) && (
-          <div className="mt-4 md:mt-5 overflow-x-auto">
-          <div className="flex items-center gap-0 min-w-max md:min-w-0">
-            {STAGE_STEPS.map((step, idx) => {
-              const isDone = currentStepIdx >= idx
-              const isCurrent = idx === currentStepIdx
-              const isLast = idx === STAGE_STEPS.length - 1
-              return (
-                <div key={step} className="flex items-center flex-1">
-                  <button onClick={() => changeStage(step)}
-                    className="flex flex-col items-center gap-1.5 group"
-                    style={{ minWidth: '60px' }}>
-                    <div className="w-6 h-6 rounded-full flex items-center justify-center transition-all"
-                      style={{
-                        background: isDone ? 'var(--gold-primary)' : 'var(--bg-elevated)',
-                        border: `2px solid ${isCurrent ? 'var(--gold-primary)' : isDone ? 'var(--gold-primary)' : 'var(--border-default)'}`,
-                      }}>
-                      {isDone && <CheckCircle size={12} style={{ color: '#0A0A0A' }} />}
-                    </div>
-                    <span className="text-[10px] uppercase tracking-wider"
-                      style={{ color: isCurrent ? 'var(--gold-primary)' : isDone ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
-                      {STAGE_LABELS[step]}
-                    </span>
-                  </button>
-                  {!isLast && (
-                    <div className="flex-1 h-0.5 mx-1"
-                      style={{ background: currentStepIdx > idx ? 'var(--gold-primary)' : 'var(--border-subtle)' }} />
-                  )}
-                </div>
-              )
-            })}
-          </div>
-          </div>
-        )}
+        {/* Stage progress tracker */}
+        <div className="mt-4 md:mt-5">
+          {deal.stage === 'lost' ? (
+            <div className="flex items-center gap-3">
+              <span className="text-xs px-2.5 py-1 rounded-full font-medium uppercase tracking-wider"
+                style={{ background: 'rgba(224,82,82,0.12)', color: 'var(--status-red)', border: '1px solid rgba(224,82,82,0.25)' }}>
+                Deal Lost
+              </span>
+              <button onClick={() => changeStage('proposal')} className="text-xs"
+                style={{ color: 'var(--text-muted)' }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--gold-primary)')}
+                onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}>
+                Reopen as Proposal →
+              </button>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+            <div className="flex items-center gap-0 min-w-max md:min-w-0">
+              {STAGE_STEPS.map((step, idx) => {
+                const isDone = currentStepIdx >= idx
+                const isCurrent = idx === currentStepIdx
+                const isLast = idx === STAGE_STEPS.length - 1
+                return (
+                  <div key={step} className="flex items-center flex-1">
+                    <button onClick={() => changeStage(step)}
+                      className="flex flex-col items-center gap-1.5 group"
+                      style={{ minWidth: '60px' }}>
+                      <div className="w-6 h-6 rounded-full flex items-center justify-center transition-all"
+                        style={{
+                          background: isDone ? 'var(--gold-primary)' : 'var(--bg-elevated)',
+                          border: `2px solid ${isCurrent ? 'var(--gold-primary)' : isDone ? 'var(--gold-primary)' : 'var(--border-default)'}`,
+                        }}>
+                        {isDone && <CheckCircle size={12} style={{ color: '#0A0A0A' }} />}
+                      </div>
+                      <span className="text-[10px] uppercase tracking-wider"
+                        style={{ color: isCurrent ? 'var(--gold-primary)' : isDone ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
+                        {STAGE_LABELS[step]}
+                      </span>
+                    </button>
+                    {!isLast && (
+                      <div className="flex-1 h-0.5 mx-1"
+                        style={{ background: currentStepIdx > idx ? 'var(--gold-primary)' : 'var(--border-subtle)' }} />
+                    )}
+                  </div>
+                )
+              })}
+              {/* Quick-lose button */}
+              <button onClick={() => changeStage('lost')}
+                className="ml-4 text-xs px-2.5 py-1 rounded flex-shrink-0"
+                style={{ color: 'var(--status-red)', border: '1px solid rgba(224,82,82,0.3)', background: 'rgba(224,82,82,0.06)' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(224,82,82,0.12)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(224,82,82,0.06)' }}>
+                Mark Lost
+              </button>
+            </div>
+            </div>
+          )}
+        </div>
       </Card>
 
       {/* Tabs */}
@@ -209,7 +273,42 @@ export default function DealDetailPage() {
       {/* Overview */}
       {activeTab === 'overview' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="col-span-1 lg:col-span-2">
+          <div className="col-span-1 lg:col-span-2 space-y-4">
+            {/* Retainer Info Card */}
+            {deal.deal_type === 'retainer' && deal.retainer_amount != null && (
+              <Card className="p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <Repeat size={14} style={{ color: 'var(--gold-primary)' }} />
+                    <h3 className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Retainer Info</h3>
+                  </div>
+                  <Button size="sm" variant="secondary" loading={generatingInstallments} onClick={generateRetainerInstallments}>
+                    Generate Installments
+                  </Button>
+                </div>
+                <div className="grid grid-cols-2 gap-y-3 text-sm">
+                  {[
+                    ['Monthly Amount', formatCurrency(deal.retainer_amount, deal.currency)],
+                    ['Billing Day', deal.retainer_billing_day ? `Day ${deal.retainer_billing_day} of each month` : '—'],
+                    ['Start Date', formatDate(deal.retainer_start_date)],
+                    ['End Date', deal.retainer_end_date ? formatDate(deal.retainer_end_date) : 'Ongoing'],
+                    ['Contract Value', formatCurrency(deal.value, deal.currency)],
+                    ['Months Remaining', deal.retainer_end_date
+                      ? `${Math.max(0, differenceInMonths(new Date(deal.retainer_end_date), new Date()))} months`
+                      : 'Ongoing'],
+                  ].map(([label, value]) => (
+                    <div key={label}>
+                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{label}</p>
+                      <p style={{
+                        color: label === 'Monthly Amount' || label === 'Contract Value' ? 'var(--gold-primary)' : 'var(--text-primary)',
+                        fontFamily: label === 'Monthly Amount' || label === 'Contract Value' ? 'DM Mono, monospace' : undefined,
+                      }}>{value}</p>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+
             <Card className="p-5">
               <h3 className="text-xs font-medium uppercase tracking-wider mb-4" style={{ color: 'var(--text-muted)' }}>Deal Details</h3>
               <div className="grid grid-cols-2 gap-y-3 text-sm">

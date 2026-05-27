@@ -5,6 +5,7 @@ import {
   createColumnHelper, type SortingState,
 } from '@tanstack/react-table'
 import { Plus, LayoutGrid, List, MoreHorizontal, GripVertical, ChevronLeft, ChevronRight } from 'lucide-react'
+import { format } from 'date-fns'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { supabase } from '@/lib/supabase'
 import { logActivity } from '@/lib/activityLogger'
@@ -14,7 +15,7 @@ import type { Deal, Client, Profile, DealStage } from '@/types'
 import Button from '@/components/ui/Button'
 import Card from '@/components/ui/Card'
 import Table from '@/components/ui/Table'
-import { DealStageBadge } from '@/components/ui/Badge'
+import Badge, { DealStageBadge } from '@/components/ui/Badge'
 import EmptyState from '@/components/ui/EmptyState'
 import { SkeletonRow } from '@/components/ui/Skeleton'
 import DealFormModal from '@/components/modules/DealFormModal'
@@ -25,23 +26,28 @@ type ViewMode = 'kanban' | 'table'
 
 type EnrichedDeal = Deal & { client?: Client; assigned_profile?: Profile }
 
-const STAGES: DealStage[] = ['lead', 'proposal', 'negotiation', 'won', 'lost', 'paused']
+const STAGES: DealStage[] = ['proposal', 'won', 'lost']
 
 const STAGE_LABELS: Record<DealStage, string> = {
-  lead: 'Lead', proposal: 'Proposal', negotiation: 'Negotiation',
-  won: 'Won', lost: 'Lost', paused: 'Paused',
+  proposal: 'Proposal',
+  won: 'Won',
+  lost: 'Lost',
 }
 
 const STAGE_COLORS: Record<DealStage, { text: string; bg: string; border: string }> = {
-  lead:        { text: 'var(--status-blue)',   bg: 'rgba(74,144,217,0.06)',  border: 'rgba(74,144,217,0.15)' },
-  proposal:    { text: 'var(--status-purple)', bg: 'rgba(155,111,212,0.06)', border: 'rgba(155,111,212,0.15)' },
-  negotiation: { text: 'var(--status-yellow)', bg: 'rgba(224,160,48,0.06)',  border: 'rgba(224,160,48,0.15)' },
-  won:         { text: 'var(--status-green)',  bg: 'rgba(76,175,125,0.08)',  border: 'rgba(76,175,125,0.2)' },
-  lost:        { text: 'var(--status-red)',    bg: 'rgba(224,82,82,0.06)',   border: 'rgba(224,82,82,0.15)' },
-  paused:      { text: 'var(--text-muted)',    bg: 'rgba(90,82,72,0.06)',    border: 'rgba(90,82,72,0.15)' },
+  proposal: { text: 'var(--status-blue)',  bg: 'rgba(74,144,217,0.06)',  border: 'rgba(74,144,217,0.15)' },
+  won:      { text: 'var(--status-green)', bg: 'rgba(76,175,125,0.08)',  border: 'rgba(76,175,125,0.2)' },
+  lost:     { text: 'var(--status-red)',   bg: 'rgba(224,82,82,0.06)',   border: 'rgba(224,82,82,0.15)' },
 }
 
 const helper = createColumnHelper<EnrichedDeal>()
+
+function dealValueDisplay(deal: EnrichedDeal) {
+  if (deal.deal_type === 'retainer' && deal.retainer_amount != null) {
+    return `${formatCurrency(deal.retainer_amount, deal.currency)}/mo`
+  }
+  return formatCurrency(deal.value, deal.currency)
+}
 
 export default function DealsPage() {
   const navigate = useNavigate()
@@ -61,10 +67,8 @@ export default function DealsPage() {
   const [editDeal, setEditDeal] = useState<Deal | null>(null)
   const [menuOpen, setMenuOpen] = useState<string | null>(null)
 
-  // Drag state
   const dragId = useRef<string | null>(null)
   const [dragOver, setDragOver] = useState<DealStage | null>(null)
-  // Mobile kanban: one stage at a time
   const [mobileStageIdx, setMobileStageIdx] = useState(0)
   const [moveMenuOpen, setMoveMenuOpen] = useState<string | null>(null)
   const isMobile = useIsMobile()
@@ -98,7 +102,6 @@ export default function DealsPage() {
   }
 
   async function updateDealStage(dealId: string, newStage: DealStage) {
-    // Optimistic update
     setDeals((prev) => prev.map((d) => d.id === dealId ? { ...d, stage: newStage } : d))
     const { error } = await supabase.from('deals').update({ stage: newStage }).eq('id', dealId)
     if (error) {
@@ -129,7 +132,6 @@ export default function DealsPage() {
     })
   }, [deals, search, stageFilter, assignedFilter])
 
-  // Kanban columns
   const columns_by_stage = useMemo(() => {
     return STAGES.map((stage) => ({
       stage,
@@ -138,7 +140,6 @@ export default function DealsPage() {
     }))
   }, [filtered])
 
-  // Table columns
   const tableColumns = useMemo(() => [
     helper.display({
       id: 'title',
@@ -147,7 +148,10 @@ export default function DealsPage() {
         const client = row.original.client as { name?: string } | undefined
         return (
           <div>
-            <p className="font-medium text-sm" style={{ color: 'var(--text-primary)' }}>{row.original.title}</p>
+            <div className="flex items-center gap-2">
+              <p className="font-medium text-sm" style={{ color: 'var(--text-primary)' }}>{row.original.title}</p>
+              {row.original.deal_type === 'retainer' && <Badge variant="gold" size="sm">Retainer</Badge>}
+            </div>
             {client?.name && <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{client.name}</p>}
           </div>
         )
@@ -157,13 +161,25 @@ export default function DealsPage() {
       header: 'Stage',
       cell: ({ getValue }) => <DealStageBadge stage={getValue()} />,
     }),
-    helper.accessor('value', {
+    helper.display({
+      id: 'value',
       header: 'Value',
-      cell: ({ row }) => (
-        <span style={{ fontFamily: 'DM Mono, monospace', color: 'var(--gold-primary)', fontSize: '13px' }}>
-          {formatCurrency(row.original.value, row.original.currency)}
-        </span>
-      ),
+      cell: ({ row }) => {
+        const deal = row.original
+        return (
+          <div>
+            <span style={{ fontFamily: 'DM Mono, monospace', color: 'var(--gold-primary)', fontSize: '13px' }}>
+              {dealValueDisplay(deal)}
+            </span>
+            {deal.deal_type === 'retainer' && deal.retainer_start_date && (
+              <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                {format(new Date(deal.retainer_start_date), 'MMM yyyy')} →{' '}
+                {deal.retainer_end_date ? format(new Date(deal.retainer_end_date), 'MMM yyyy') : 'ongoing'}
+              </p>
+            )}
+          </div>
+        )
+      },
     }),
     helper.accessor('probability', {
       header: 'Probability',
@@ -270,7 +286,6 @@ export default function DealsPage() {
           </span>
         </div>
         <div className="flex items-center gap-3">
-          {/* View toggle — hidden on mobile */}
           <div className="hidden md:flex rounded overflow-hidden" style={{ border: '1px solid var(--border-default)' }}>
             {(['kanban', 'table'] as ViewMode[]).map((v) => (
               <button key={v} onClick={() => setView(v)}
@@ -315,10 +330,9 @@ export default function DealsPage() {
         </div>
       </Card>
 
-      {/* MOBILE KANBAN: single stage with nav */}
+      {/* MOBILE KANBAN */}
       {isMobile && (
         <div>
-          {/* Stage selector */}
           <div className="flex items-center gap-2 overflow-x-auto pb-2 mb-3" style={{ scrollbarWidth: 'none' }}>
             {STAGES.map((s, i) => {
               const colors = STAGE_COLORS[s]
@@ -337,7 +351,6 @@ export default function DealsPage() {
             })}
           </div>
 
-          {/* Stage nav arrows + label */}
           <div className="flex items-center justify-between mb-2">
             <button onClick={() => setMobileStageIdx(i => Math.max(0, i - 1))} disabled={mobileStageIdx === 0}
               className="w-9 h-9 rounded flex items-center justify-center disabled:opacity-30"
@@ -354,7 +367,6 @@ export default function DealsPage() {
             </button>
           </div>
 
-          {/* Cards for selected stage */}
           <div className="space-y-2">
             {mobileStageDeals.length === 0 ? (
               <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>No deals in this stage</p>
@@ -367,12 +379,21 @@ export default function DealsPage() {
                   style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)' }}
                   onClick={() => navigate(`/deals/${deal.id}`)}>
                   {client?.name && <p className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>{client.name}</p>}
-                  <p className="font-medium text-sm mb-2" style={{ color: 'var(--text-primary)' }}>{deal.title}</p>
+                  <div className="flex items-center gap-2 mb-2">
+                    <p className="font-medium text-sm" style={{ color: 'var(--text-primary)' }}>{deal.title}</p>
+                    {deal.deal_type === 'retainer' && <Badge variant="gold" size="sm">Retainer</Badge>}
+                  </div>
                   <div className="flex items-center justify-between">
-                    <span style={{ fontFamily: 'DM Mono, monospace', color: colors.text, fontSize: '13px' }}>
-                      {formatCurrency(deal.value, deal.currency)}
-                    </span>
-                    {/* Move button */}
+                    <div>
+                      <span style={{ fontFamily: 'DM Mono, monospace', color: colors.text, fontSize: '13px' }}>
+                        {dealValueDisplay(deal)}
+                      </span>
+                      {deal.deal_type === 'retainer' && deal.retainer_start_date && (
+                        <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                          {format(new Date(deal.retainer_start_date), 'MMM yyyy')} → {deal.retainer_end_date ? format(new Date(deal.retainer_end_date), 'MMM yyyy') : 'ongoing'}
+                        </p>
+                      )}
+                    </div>
                     <div className="relative" onClick={(e) => e.stopPropagation()}>
                       <button onClick={(e) => { e.stopPropagation(); setMoveMenuOpen(moveMenuOpen === deal.id ? null : deal.id) }}
                         className="px-3 py-1.5 rounded text-xs"
@@ -402,7 +423,7 @@ export default function DealsPage() {
         </div>
       )}
 
-      {/* DESKTOP/TABLET KANBAN VIEW */}
+      {/* DESKTOP KANBAN VIEW */}
       {!isMobile && view === 'kanban' && (
         <div className="flex gap-3 overflow-x-auto pb-2">
           {columns_by_stage.map(({ stage, deals: stageDeals, total }) => {
@@ -425,7 +446,6 @@ export default function DealsPage() {
                   if (dragId.current) updateDealStage(dragId.current, stage)
                   dragId.current = null
                 }}>
-                {/* Column header */}
                 <div className="px-3 py-3" style={{ borderBottom: `1px solid ${colors.border}` }}>
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: colors.text }}>
@@ -443,7 +463,6 @@ export default function DealsPage() {
                   )}
                 </div>
 
-                {/* Cards */}
                 <div className="flex-1 p-2 space-y-2">
                   {stageDeals.map((deal) => {
                     const client = deal.client as { name?: string } | undefined
@@ -467,13 +486,23 @@ export default function DealsPage() {
                             {client.name}
                           </p>
                         )}
-                        <p className="text-sm font-medium leading-snug mb-2" style={{ color: 'var(--text-primary)' }}>
-                          {deal.title}
-                        </p>
+                        <div className="flex items-center gap-1.5 mb-2">
+                          <p className="text-sm font-medium leading-snug" style={{ color: 'var(--text-primary)' }}>
+                            {deal.title}
+                          </p>
+                          {deal.deal_type === 'retainer' && <Badge variant="gold" size="sm">Ret.</Badge>}
+                        </div>
                         <div className="flex items-center justify-between">
-                          <span style={{ fontFamily: 'DM Mono, monospace', color: colors.text, fontSize: '13px', fontWeight: 500 }}>
-                            {formatCurrency(deal.value, deal.currency)}
-                          </span>
+                          <div>
+                            <span style={{ fontFamily: 'DM Mono, monospace', color: colors.text, fontSize: '13px', fontWeight: 500 }}>
+                              {dealValueDisplay(deal)}
+                            </span>
+                            {deal.deal_type === 'retainer' && deal.retainer_start_date && (
+                              <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                                {format(new Date(deal.retainer_start_date), 'MMM yy')} → {deal.retainer_end_date ? format(new Date(deal.retainer_end_date), 'MMM yy') : '∞'}
+                              </p>
+                            )}
+                          </div>
                           {initials && (
                             <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-semibold"
                               style={{ background: 'var(--bg-overlay)', color: 'var(--text-secondary)', border: '1px solid var(--border-default)' }}>
@@ -487,7 +516,6 @@ export default function DealsPage() {
                           </p>
                         )}
 
-                        {/* Three-dot menu */}
                         <div className="mt-2 pt-2 flex justify-end" style={{ borderTop: '1px solid var(--border-subtle)' }}
                           onClick={(e) => e.stopPropagation()}>
                           <button onClick={(e) => { e.stopPropagation(); setMenuOpen(menuOpen === deal.id ? null : deal.id) }}

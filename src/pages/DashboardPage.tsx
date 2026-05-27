@@ -1,25 +1,26 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { TrendingUp, Clock, Briefcase, Receipt, CheckCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatRelativeDate, formatDaysUntil } from '@/lib/formatters'
 import StatCard from '@/components/ui/StatCard'
 import Card from '@/components/ui/Card'
-// Badge used dynamically via stageColors map
 import { SkeletonCard } from '@/components/ui/Skeleton'
 import Button from '@/components/ui/Button'
 import toast from 'react-hot-toast'
 import type { ActivityLog, Installment, Invoice, DealStage } from '@/types'
 import { differenceInDays, startOfMonth, endOfMonth } from 'date-fns'
 
+type Period = 'month' | 'overall'
+
 interface KPIs {
-  revenueThisMonth: number
+  revenue: number
   revenueLastMonth: number
   pendingPayments: number
   pendingCount: number
   activeDealsCount: number
   pipelineValue: number
-  expensesThisMonth: number
+  expenses: number
 }
 
 interface PipelineColumn {
@@ -28,8 +29,25 @@ interface PipelineColumn {
   total: number
 }
 
+const PIPELINE_STAGES: DealStage[] = ['proposal', 'won', 'lost']
+
+const stageColors: Record<DealStage, string> = {
+  proposal: 'var(--status-blue)',
+  won: 'var(--status-green)',
+  lost: 'var(--status-red)',
+}
+
+const stageLabels: Record<DealStage, string> = {
+  proposal: 'Proposal',
+  won: 'Won',
+  lost: 'Lost',
+}
+
 export default function DashboardPage() {
   const navigate = useNavigate()
+  const [period, setPeriod] = useState<Period>(() =>
+    (localStorage.getItem('dashboard_period') as Period) ?? 'month'
+  )
   const [kpis, setKpis] = useState<KPIs | null>(null)
   const [pipeline, setPipeline] = useState<PipelineColumn[]>([])
   const [activity, setActivity] = useState<ActivityLog[]>([])
@@ -37,58 +55,111 @@ export default function DashboardPage() {
   const [overdueInvoices, setOverdueInvoices] = useState<Invoice[]>([])
   const [loading, setLoading] = useState(true)
 
+  const mountedRef = useRef(false)
+
   useEffect(() => {
     fetchAll()
   }, [])
 
+  useEffect(() => {
+    if (!mountedRef.current) { mountedRef.current = true; return }
+    fetchKPIs(period)
+  }, [period])
+
+  function handlePeriodChange(p: Period) {
+    setPeriod(p)
+    localStorage.setItem('dashboard_period', p)
+  }
+
   async function fetchAll() {
     setLoading(true)
     try {
-      await Promise.all([fetchKPIs(), fetchPipeline(), fetchActivity(), fetchInstallments(), fetchOverdueInvoices()])
+      await Promise.all([fetchKPIs(period), fetchPipeline(), fetchActivity(), fetchInstallments(), fetchOverdueInvoices()])
     } finally {
       setLoading(false)
     }
   }
 
-  async function fetchKPIs() {
+  async function fetchKPIs(p: Period) {
     const now = new Date()
     const monthStart = startOfMonth(now).toISOString()
     const monthEnd = endOfMonth(now).toISOString()
     const lastMonthStart = startOfMonth(new Date(now.getFullYear(), now.getMonth() - 1)).toISOString()
     const lastMonthEnd = endOfMonth(new Date(now.getFullYear(), now.getMonth() - 1)).toISOString()
 
-    const [paid, lastPaid, installments, deals, expenses] = await Promise.all([
-      supabase.from('invoices').select('total').eq('status', 'paid').gte('paid_at', monthStart).lte('paid_at', monthEnd),
-      supabase.from('invoices').select('total').eq('status', 'paid').gte('paid_at', lastMonthStart).lte('paid_at', lastMonthEnd),
+    // Get invoice IDs that have linked installments (exclude from invoice revenue to avoid double-counting)
+    const { data: linkedInvRows } = await supabase
+      .from('installments')
+      .select('invoice_id')
+      .not('invoice_id', 'is', null)
+    const excludedInvIds = new Set(
+      (linkedInvRows ?? []).map((r) => r.invoice_id as string).filter(Boolean)
+    )
+
+    // Paid installments
+    let instQ = supabase.from('installments').select('amount').eq('status', 'paid')
+    if (p === 'month') instQ = instQ.gte('paid_at', monthStart).lte('paid_at', monthEnd)
+
+    // Paid invoices without linked installments
+    let invQ = supabase.from('invoices').select('id, total').eq('status', 'paid')
+    if (p === 'month') invQ = invQ.gte('paid_at', monthStart).lte('paid_at', monthEnd)
+
+    // Last month (for delta — only relevant in month mode)
+    const lastInstQ = supabase.from('installments').select('amount').eq('status', 'paid')
+      .gte('paid_at', lastMonthStart).lte('paid_at', lastMonthEnd)
+    const lastInvQ = supabase.from('invoices').select('id, total').eq('status', 'paid')
+      .gte('paid_at', lastMonthStart).lte('paid_at', lastMonthEnd)
+
+    // Expenses
+    let expQ = supabase.from('expenses').select('amount')
+    if (p === 'month') {
+      expQ = expQ
+        .gte('expense_date', monthStart.slice(0, 10))
+        .lte('expense_date', monthEnd.slice(0, 10))
+    }
+
+    const [paidInst, paidInv, lastPaidInst, lastPaidInv, installments, deals, expenses] = await Promise.all([
+      instQ,
+      invQ,
+      lastInstQ,
+      lastInvQ,
       supabase.from('installments').select('amount').in('status', ['pending', 'overdue']),
-      supabase.from('deals').select('value, stage').in('stage', ['lead', 'proposal', 'negotiation']),
-      supabase.from('expenses').select('amount').gte('expense_date', monthStart.slice(0, 10)).lte('expense_date', monthEnd.slice(0, 10)),
+      supabase.from('deals').select('value, stage').eq('stage', 'proposal'),
+      expQ,
     ])
 
-    const revenue = (paid.data ?? []).reduce((s, r) => s + Number(r.total), 0)
-    const lastRevenue = (lastPaid.data ?? []).reduce((s, r) => s + Number(r.total), 0)
+    const instRevenue = (paidInst.data ?? []).reduce((s, r) => s + Number(r.amount), 0)
+    const invRevenue = (paidInv.data ?? [])
+      .filter((inv: { id: string; total: number }) => !excludedInvIds.has(inv.id))
+      .reduce((s, r) => s + Number(r.total), 0)
+    const revenue = instRevenue + invRevenue
+
+    const lastInstRevenue = (lastPaidInst.data ?? []).reduce((s, r) => s + Number(r.amount), 0)
+    const lastInvRevenue = (lastPaidInv.data ?? [])
+      .filter((inv: { id: string; total: number }) => !excludedInvIds.has(inv.id))
+      .reduce((s, r) => s + Number(r.total), 0)
+    const revenueLastMonth = lastInstRevenue + lastInvRevenue
+
     const pending = (installments.data ?? []).reduce((s, r) => s + Number(r.amount), 0)
     const pipelineVal = (deals.data ?? []).reduce((s, r) => s + Number(r.value), 0)
     const expenses_ = (expenses.data ?? []).reduce((s, r) => s + Number(r.amount), 0)
 
     setKpis({
-      revenueThisMonth: revenue,
-      revenueLastMonth: lastRevenue,
+      revenue,
+      revenueLastMonth,
       pendingPayments: pending,
       pendingCount: installments.data?.length ?? 0,
       activeDealsCount: deals.data?.length ?? 0,
       pipelineValue: pipelineVal,
-      expensesThisMonth: expenses_,
+      expenses: expenses_,
     })
   }
 
   async function fetchPipeline() {
     const { data } = await supabase.from('deals').select('stage, value')
     if (!data) return
-
-    const stages: DealStage[] = ['lead', 'proposal', 'negotiation', 'won', 'lost', 'paused']
     setPipeline(
-      stages.map((stage) => {
+      PIPELINE_STAGES.map((stage) => {
         const rows = data.filter((d) => d.stage === stage)
         return { stage, count: rows.length, total: rows.reduce((s, r) => s + Number(r.value), 0) }
       })
@@ -132,30 +203,31 @@ export default function DashboardPage() {
     if (error) { toast.error('Failed to update'); return }
     toast.success('Marked as paid')
     setUpcomingInstallments((prev) => prev.filter((i) => i.id !== id))
+    fetchKPIs(period)
   }
 
-  const stageColors: Record<DealStage, string> = {
-    lead: 'var(--status-blue)',
-    proposal: 'var(--status-purple)',
-    negotiation: 'var(--status-yellow)',
-    won: 'var(--status-green)',
-    lost: 'var(--status-red)',
-    paused: 'var(--text-muted)',
-  }
-
-  const stageLabels: Record<DealStage, string> = {
-    lead: 'Lead', proposal: 'Proposal', negotiation: 'Negotiation',
-    won: 'Won', lost: 'Lost', paused: 'Paused',
-  }
-
-  const revenueDelta = kpis && kpis.revenueLastMonth > 0
-    ? Math.abs(Math.round(((kpis.revenueThisMonth - kpis.revenueLastMonth) / kpis.revenueLastMonth) * 100)) + '% vs last month'
+  const revenueDelta = kpis && kpis.revenueLastMonth > 0 && period === 'month'
+    ? Math.abs(Math.round(((kpis.revenue - kpis.revenueLastMonth) / kpis.revenueLastMonth) * 100)) + '% vs last month'
     : undefined
-
-  const revenueUp = kpis ? kpis.revenueThisMonth >= kpis.revenueLastMonth : true
+  const revenueUp = kpis ? kpis.revenue >= kpis.revenueLastMonth : true
 
   return (
     <div className="space-y-4 md:space-y-6">
+      {/* Period Toggle */}
+      <div className="flex items-center justify-end">
+        <div className="flex gap-1 p-1 rounded-lg" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
+          {(['month', 'overall'] as Period[]).map((p) => (
+            <button key={p} onClick={() => handlePeriodChange(p)}
+              className="px-3 py-1.5 rounded text-xs font-medium transition-all"
+              style={period === p
+                ? { background: 'var(--gold-primary)', color: '#0A0A0A' }
+                : { color: 'var(--text-muted)' }}>
+              {p === 'month' ? 'This Month' : 'Overall'}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* KPI Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         {loading ? (
@@ -163,8 +235,8 @@ export default function DashboardPage() {
         ) : (
           <>
             <StatCard
-              label="Revenue This Month"
-              value={formatCurrency(kpis?.revenueThisMonth ?? 0)}
+              label={period === 'month' ? 'Revenue This Month' : 'Total Revenue'}
+              value={formatCurrency(kpis?.revenue ?? 0)}
               delta={revenueDelta}
               deltaPositive={revenueUp}
               icon={TrendingUp}
@@ -183,8 +255,8 @@ export default function DashboardPage() {
               icon={Briefcase}
             />
             <StatCard
-              label="Monthly Expenses"
-              value={formatCurrency(kpis?.expensesThisMonth ?? 0)}
+              label={period === 'month' ? 'Monthly Expenses' : 'Total Expenses'}
+              value={formatCurrency(kpis?.expenses ?? 0)}
               icon={Receipt}
             />
           </>
@@ -201,7 +273,7 @@ export default function DashboardPage() {
             </div>
             <div className="p-4 md:p-5">
               <div className="overflow-x-auto">
-              <div className="grid grid-cols-6 gap-2 min-w-[400px]">
+              <div className="grid grid-cols-3 gap-3 min-w-[280px]">
                 {pipeline.map((col) => (
                   <button
                     key={col.stage}
@@ -273,11 +345,7 @@ export default function DashboardPage() {
         <Card>
           <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
             <h3 className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Upcoming Payments</h3>
-            <button
-              onClick={() => navigate('/installments')}
-              className="text-xs"
-              style={{ color: 'var(--gold-primary)' }}
-            >
+            <button onClick={() => navigate('/installments')} className="text-xs" style={{ color: 'var(--gold-primary)' }}>
               View all →
             </button>
           </div>
@@ -320,11 +388,7 @@ export default function DashboardPage() {
         <Card>
           <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
             <h3 className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Overdue Invoices</h3>
-            <button
-              onClick={() => navigate('/invoices?status=overdue')}
-              className="text-xs"
-              style={{ color: 'var(--gold-primary)' }}
-            >
+            <button onClick={() => navigate('/invoices?status=overdue')} className="text-xs" style={{ color: 'var(--gold-primary)' }}>
               View all →
             </button>
           </div>
