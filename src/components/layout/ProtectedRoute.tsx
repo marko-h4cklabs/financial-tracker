@@ -3,11 +3,10 @@ import { useAuth } from '@/store/authStore'
 
 interface ProtectedRouteProps {
   children: React.ReactNode
-  adminOnly?: boolean
 }
 
-export default function ProtectedRoute({ children, adminOnly = false }: ProtectedRouteProps) {
-  const { user, isAdmin, isLoading } = useAuth()
+export default function ProtectedRoute({ children }: ProtectedRouteProps) {
+  const { user, isLoading } = useAuth()
 
   if (isLoading) {
     return (
@@ -21,7 +20,6 @@ export default function ProtectedRoute({ children, adminOnly = false }: Protecte
   }
 
   if (!user) return <Navigate to="/login" replace />
-  if (adminOnly && !isAdmin) return <Navigate to="/dashboard" replace />
 
   return <>{children}</>
 }

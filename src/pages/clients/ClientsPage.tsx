@@ -21,6 +21,7 @@ import EmptyState from '@/components/ui/EmptyState'
 import { SkeletonRow } from '@/components/ui/Skeleton'
 import ClientFormModal from '@/components/modules/ClientFormModal'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
+import { useRealtimeSync } from '@/hooks/useRealtimeSync'
 import toast from 'react-hot-toast'
 
 type EnrichedClient = Client & { deal_count: number; deal_value: number; assigned_profile?: Profile }
@@ -48,6 +49,12 @@ export default function ClientsPage() {
     fetchClients()
     fetchProfiles()
   }, [])
+
+  const { flashId, flashType } = useRealtimeSync('clients', fetchClients, {
+    getToastMessage: (p) => p.eventType === 'INSERT'
+      ? `New client added: ${(p.new?.name as string) ?? 'Unknown'}`
+      : null,
+  })
 
   async function deleteClient(id: string) {
     await supabase.from('clients').delete().eq('id', id)
@@ -295,7 +302,7 @@ export default function ClientsPage() {
               description={search || statusFilter ? 'Try adjusting your filters' : 'Add your first client to get started'}
               action={!search && !statusFilter ? { label: 'New Client', onClick: () => setShowModal(true) } : undefined} />
           ) : (
-            <Table table={table} onRowClick={(row) => navigate(`/clients/${row.id}`)} />
+            <Table table={table} onRowClick={(row) => navigate(`/clients/${row.id}`)} flashId={flashId} flashType={flashType} />
           )}
         </Card>
       )}

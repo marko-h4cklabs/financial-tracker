@@ -6,9 +6,11 @@ import {
 interface TableProps<TData> {
   table: TanstackTable<TData>
   onRowClick?: (row: TData) => void
+  flashId?: string | null
+  flashType?: string | null
 }
 
-export default function Table<TData>({ table, onRowClick }: TableProps<TData>) {
+export default function Table<TData>({ table, onRowClick, flashId, flashType }: TableProps<TData>) {
   return (
     <div className="w-full overflow-x-auto">
       <table className="w-full border-collapse text-sm">
@@ -39,11 +41,14 @@ export default function Table<TData>({ table, onRowClick }: TableProps<TData>) {
           ))}
         </thead>
         <tbody>
-          {table.getRowModel().rows.map((row) => (
+          {table.getRowModel().rows.map((row) => {
+            const rowId = (row.original as Record<string, unknown>)?.id as string | undefined
+            const isFlashing = !!flashId && rowId === flashId
+            return (
             <tr
               key={row.id}
               onClick={() => onRowClick?.(row.original)}
-              className="transition-colors"
+              className={`transition-colors${isFlashing ? ` rt-flash-${flashType}` : ''}`}
               style={{
                 borderBottom: '1px solid var(--border-subtle)',
                 cursor: onRowClick ? 'pointer' : 'default',
@@ -61,7 +66,8 @@ export default function Table<TData>({ table, onRowClick }: TableProps<TData>) {
                 </td>
               ))}
             </tr>
-          ))}
+            )
+          })}
         </tbody>
       </table>
     </div>

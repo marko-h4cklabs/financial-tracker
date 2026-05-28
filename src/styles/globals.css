@@ -2,6 +2,21 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes rt-flash-new {
+  0%   { border-left: 2px solid var(--status-green); background: rgba(76, 175, 125, 0.05); }
+  60%  { border-left: 2px solid var(--status-green); background: rgba(76, 175, 125, 0.05); }
+  100% { border-left: 2px solid transparent; background: transparent; }
+}
+
+@keyframes rt-flash-update {
+  0%   { border-left: 2px solid var(--gold-primary); background: rgba(201, 168, 76, 0.05); }
+  60%  { border-left: 2px solid var(--gold-primary); background: rgba(201, 168, 76, 0.05); }
+  100% { border-left: 2px solid transparent; background: transparent; }
+}
+
+.rt-flash-new    { animation: rt-flash-new    1.5s ease-out forwards; }
+.rt-flash-update { animation: rt-flash-update 1.5s ease-out forwards; }
+
 :root {
   --bg-base: #0A0A0A;
   --bg-surface: #111111;

@@ -11,5 +11,17 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor:   ['react', 'react-dom', 'react-router-dom'],
+          supabase: ['@supabase/supabase-js'],
+          ui:       ['lucide-react', 'react-hot-toast'],
+          table:    ['@tanstack/react-table'],
+          dates:    ['date-fns'],
+        },
+      },
+    },
   },
 })

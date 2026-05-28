@@ -20,6 +20,7 @@ import EmptyState from '@/components/ui/EmptyState'
 import { SkeletonRow } from '@/components/ui/Skeleton'
 import DealFormModal from '@/components/modules/DealFormModal'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
+import { useRealtimeSync } from '@/hooks/useRealtimeSync'
 import toast from 'react-hot-toast'
 import { Briefcase } from 'lucide-react'
 
@@ -80,6 +81,15 @@ export default function DealsPage() {
     fetchClients()
     fetchProfiles()
   }, [])
+
+  const { flashId, flashType } = useRealtimeSync('deals', fetchDeals, {
+    getToastMessage: (p) => {
+      if (p.eventType === 'INSERT') return `New deal: "${(p.new?.title as string) ?? 'Unknown'}"`
+      if (p.eventType === 'UPDATE' && p.new?.stage !== p.old?.stage)
+        return `Deal moved to ${(p.new?.stage as string) ?? 'new stage'}`
+      return null
+    },
+  })
 
   async function fetchClients() {
     const { data } = await supabase.from('clients').select('id, name, company').eq('status', 'active')
@@ -558,7 +568,7 @@ export default function DealsPage() {
               description={search || stageFilter ? 'Try adjusting your filters' : 'Create your first deal to get started'}
               action={!search && !stageFilter ? { label: 'New Deal', onClick: () => setShowModal(true) } : undefined} />
           ) : (
-            <Table table={table} onRowClick={(row) => navigate(`/deals/${row.id}`)} />
+            <Table table={table} onRowClick={(row) => navigate(`/deals/${row.id}`)} flashId={flashId} flashType={flashType} />
           )}
         </Card>
       )}

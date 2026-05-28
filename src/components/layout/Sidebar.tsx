@@ -16,7 +16,7 @@ const navItems = [
 ]
 
 export default function Sidebar() {
-  const { profile, isAdmin, signOut } = useAuth()
+  const { profile, signOut } = useAuth()
   const { sidebarOpen, closeSidebar } = useUIStore()
   const navigate = useNavigate()
 
@@ -116,8 +116,7 @@ export default function Sidebar() {
           <div className="mx-3 my-3" style={{ borderTop: '1px solid var(--border-subtle)' }} />
 
           <ul className="space-y-0.5 px-2">
-            {isAdmin && (
-              <li className="relative group">
+            <li className="relative group">
                 <NavLink to="/admin" onClick={handleNavClick}
                   className="flex items-center gap-3 py-2.5 rounded text-sm transition-all relative overflow-hidden
                     md:justify-center lg:justify-start px-3 md:px-0 lg:px-3"
@@ -140,7 +139,6 @@ export default function Sidebar() {
                   Admin
                 </div>
               </li>
-            )}
             <li className="relative group">
               <NavLink to="/settings" onClick={handleNavClick}
                 className="flex items-center gap-3 py-2.5 rounded text-sm transition-all relative overflow-hidden
@@ -179,7 +177,7 @@ export default function Sidebar() {
                 {profile?.full_name ?? 'User'}
               </p>
               <p className="text-[10px] uppercase tracking-wider truncate"
-                style={{ color: isAdmin ? 'var(--gold-primary)' : 'var(--text-muted)' }}>
+                style={{ color: 'var(--gold-primary)' }}>
                 {profile?.role ?? 'member'}
               </p>
             </div>

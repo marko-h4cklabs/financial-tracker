@@ -13,6 +13,7 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import ClientFormModal from '@/components/modules/ClientFormModal'
 import LogWorkModal from '@/components/modules/LogWorkModal'
 import ChecklistItemModal from '@/components/modules/ChecklistItemModal'
+import { useRealtimeSync } from '@/hooks/useRealtimeSync'
 
 type Tab = 'overview' | 'deals' | 'installments' | 'expenses' | 'work_logs' | 'tasks'
 
@@ -27,7 +28,7 @@ type EnrichedChecklistItem = ChecklistItem & {
 export default function ClientDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { profile: currentProfile, isAdmin } = useAuth()
+  const { profile: currentProfile } = useAuth()
   const [client, setClient] = useState<Client | null>(null)
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [deals, setDeals] = useState<Deal[]>([])
@@ -69,6 +70,12 @@ export default function ClientDetailPage() {
   }, [id])
 
   useEffect(() => { fetchClient() }, [fetchClient])
+
+  useRealtimeSync('deals',           fetchClient, { filter: id ? `client_id=eq.${id}` : undefined })
+  useRealtimeSync('installments',    fetchClient, { filter: id ? `client_id=eq.${id}` : undefined })
+  useRealtimeSync('expenses',        fetchClient, { filter: id ? `client_id=eq.${id}` : undefined })
+  useRealtimeSync('work_logs',       fetchClient, { filter: id ? `client_id=eq.${id}` : undefined })
+  useRealtimeSync('checklist_items', fetchClient, { filter: id ? `client_id=eq.${id}` : undefined })
 
   async function saveNotes() {
     if (!id) return
@@ -333,7 +340,7 @@ export default function ClientDetailPage() {
                 {workLogs.map((log) => {
                   const prof = log.profile as { full_name?: string; avatar_initials?: string } | null
                   const initials = prof?.avatar_initials ?? prof?.full_name?.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() ?? '?'
-                  const canEdit = log.logged_by === currentProfile?.id || isAdmin
+                  const canEdit = true
                   return (
                     <div key={log.id} className="flex items-center justify-between px-5 py-3 gap-3"
                       onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-elevated)')}

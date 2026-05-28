@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { TrendingUp, Clock, Briefcase, Receipt, CheckCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -7,9 +7,10 @@ import StatCard from '@/components/ui/StatCard'
 import Card from '@/components/ui/Card'
 import { SkeletonCard } from '@/components/ui/Skeleton'
 import Button from '@/components/ui/Button'
+import { useRealtimeSync } from '@/hooks/useRealtimeSync'
 import toast from 'react-hot-toast'
 import type { ActivityLog, Installment, DealStage } from '@/types'
-import { differenceInDays, startOfMonth, endOfMonth, startOfWeek, format } from 'date-fns'
+import { differenceInDays, startOfWeek, format } from 'date-fns'
 
 type Period = 'month' | 'overall'
 
@@ -63,6 +64,21 @@ export default function DashboardPage() {
     fetchTeamActivity()
   }, [])
 
+  // Stable callbacks for realtime subscriptions
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const refetchKPIs     = useCallback(() => fetchKPIs(period), [period])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const refetchActivity = useCallback(() => fetchActivity(), [])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const refetchWidgets  = useCallback(() => { fetchInstallments(); fetchTeamActivity() }, [])
+
+  useRealtimeSync('installments', () => { fetchKPIs(period); fetchInstallments() })
+  useRealtimeSync('deals',        refetchKPIs)
+  useRealtimeSync('expenses',     refetchKPIs)
+  useRealtimeSync('activity_log', refetchActivity)
+  useRealtimeSync('work_logs',    refetchWidgets)
+  useRealtimeSync('checklist_items', refetchWidgets)
+
   useEffect(() => {
     if (!mountedRef.current) { mountedRef.current = true; return }
     fetchKPIs(period)
@@ -83,77 +99,25 @@ export default function DashboardPage() {
   }
 
   async function fetchKPIs(p: Period) {
-    const now = new Date()
-    const monthStart = startOfMonth(now).toISOString()
-    const monthEnd = endOfMonth(now).toISOString()
-    const lastMonthStart = startOfMonth(new Date(now.getFullYear(), now.getMonth() - 1)).toISOString()
-    const lastMonthEnd = endOfMonth(new Date(now.getFullYear(), now.getMonth() - 1)).toISOString()
-
-    // Get invoice IDs that have linked installments (exclude from invoice revenue to avoid double-counting)
-    const { data: linkedInvRows } = await supabase
-      .from('installments')
-      .select('invoice_id')
-      .not('invoice_id', 'is', null)
-    const excludedInvIds = new Set(
-      (linkedInvRows ?? []).map((r) => r.invoice_id as string).filter(Boolean)
-    )
-
-    // Paid installments
-    let instQ = supabase.from('installments').select('amount').eq('status', 'paid')
-    if (p === 'month') instQ = instQ.gte('paid_at', monthStart).lte('paid_at', monthEnd)
-
-    // Paid invoices without linked installments
-    let invQ = supabase.from('invoices').select('id, total').eq('status', 'paid')
-    if (p === 'month') invQ = invQ.gte('paid_at', monthStart).lte('paid_at', monthEnd)
-
-    // Last month (for delta — only relevant in month mode)
-    const lastInstQ = supabase.from('installments').select('amount').eq('status', 'paid')
-      .gte('paid_at', lastMonthStart).lte('paid_at', lastMonthEnd)
-    const lastInvQ = supabase.from('invoices').select('id, total').eq('status', 'paid')
-      .gte('paid_at', lastMonthStart).lte('paid_at', lastMonthEnd)
-
-    // Expenses
-    let expQ = supabase.from('expenses').select('amount')
-    if (p === 'month') {
-      expQ = expQ
-        .gte('expense_date', monthStart.slice(0, 10))
-        .lte('expense_date', monthEnd.slice(0, 10))
-    }
-
-    const [paidInst, paidInv, lastPaidInst, lastPaidInv, installments, deals, expenses] = await Promise.all([
-      instQ,
-      invQ,
-      lastInstQ,
-      lastInvQ,
-      supabase.from('installments').select('amount').in('status', ['pending', 'overdue']),
-      supabase.from('deals').select('value, stage').eq('stage', 'proposal'),
-      expQ,
-    ])
-
-    const instRevenue = (paidInst.data ?? []).reduce((s, r) => s + Number(r.amount), 0)
-    const invRevenue = (paidInv.data ?? [])
-      .filter((inv: { id: string; total: number }) => !excludedInvIds.has(inv.id))
-      .reduce((s, r) => s + Number(r.total), 0)
-    const revenue = instRevenue + invRevenue
-
-    const lastInstRevenue = (lastPaidInst.data ?? []).reduce((s, r) => s + Number(r.amount), 0)
-    const lastInvRevenue = (lastPaidInv.data ?? [])
-      .filter((inv: { id: string; total: number }) => !excludedInvIds.has(inv.id))
-      .reduce((s, r) => s + Number(r.total), 0)
-    const revenueLastMonth = lastInstRevenue + lastInvRevenue
-
-    const pending = (installments.data ?? []).reduce((s, r) => s + Number(r.amount), 0)
-    const pipelineVal = (deals.data ?? []).reduce((s, r) => s + Number(r.value), 0)
-    const expenses_ = (expenses.data ?? []).reduce((s, r) => s + Number(r.amount), 0)
+    const [revenue, revenueLastMonth, pendingTotal, pendingCount, pipelineValue, activeDealsCount, expenses_] =
+      await Promise.all([
+        supabase.rpc(p === 'month' ? 'get_revenue_this_month' : 'get_revenue_overall'),
+        supabase.rpc('get_revenue_last_month'),
+        supabase.rpc('get_pending_total'),
+        supabase.rpc('get_pending_count'),
+        supabase.rpc('get_pipeline_value'),
+        supabase.rpc('get_active_deals_count'),
+        supabase.rpc(p === 'month' ? 'get_expenses_this_month' : 'get_expenses_overall'),
+      ])
 
     setKpis({
-      revenue,
-      revenueLastMonth,
-      pendingPayments: pending,
-      pendingCount: installments.data?.length ?? 0,
-      activeDealsCount: deals.data?.length ?? 0,
-      pipelineValue: pipelineVal,
-      expenses: expenses_,
+      revenue:         Number(revenue.data ?? 0),
+      revenueLastMonth: Number(revenueLastMonth.data ?? 0),
+      pendingPayments: Number(pendingTotal.data ?? 0),
+      pendingCount:    Number(pendingCount.data ?? 0),
+      activeDealsCount: Number(activeDealsCount.data ?? 0),
+      pipelineValue:   Number(pipelineValue.data ?? 0),
+      expenses:        Number(expenses_.data ?? 0),
     })
   }
 

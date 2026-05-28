@@ -15,6 +15,7 @@ import EmptyState from '@/components/ui/EmptyState'
 import { SkeletonCard } from '@/components/ui/Skeleton'
 import ExpenseFormModal from '@/components/modules/ExpenseFormModal'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
+import { useRealtimeSync } from '@/hooks/useRealtimeSync'
 import toast from 'react-hot-toast'
 
 type EnrichedExpense = Expense & { client?: Client; deal?: Deal; created_by_profile?: { full_name: string } }
@@ -57,6 +58,12 @@ export default function ExpensesPage() {
   const [monthlyData, setMonthlyData] = useState<{ month: string; total: number; byCategory: Record<string, number> }[]>([])
 
   useEffect(() => { fetchExpenses(); fetchClients(); fetchDeals(); fetchKpis(); fetchMonthlyData() }, [])
+
+  useRealtimeSync('expenses', () => { fetchExpenses(); fetchKpis() }, {
+    getToastMessage: (p) => p.eventType === 'INSERT'
+      ? `New expense: "${(p.new?.title as string) ?? 'Unknown'}"`
+      : null,
+  })
 
   async function fetchClients() {
     const { data } = await supabase.from('clients').select('id, name, company')

@@ -1,10 +1,9 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  LayoutDashboard, Users, Briefcase, FileText,
-  CalendarClock, Receipt, ShieldCheck, Settings, Search,
+  LayoutDashboard, Users, Briefcase,
+  CalendarClock, Receipt, ClipboardList, ShieldCheck, Settings, Search,
 } from 'lucide-react'
-import { useAuth } from '@/store/authStore'
 
 interface Command {
   id: string
@@ -13,7 +12,6 @@ interface Command {
   icon: React.ElementType
   action: () => void
   keywords?: string
-  adminOnly?: boolean
 }
 
 interface Props {
@@ -23,7 +21,6 @@ interface Props {
 
 export default function CommandPalette({ isOpen, onClose }: Props) {
   const navigate = useNavigate()
-  const { isAdmin } = useAuth()
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -40,17 +37,15 @@ export default function CommandPalette({ isOpen, onClose }: Props) {
     { id: 'clients-new', label: 'New Client', icon: Users, action: () => go('/clients?new=1'), keywords: 'add client create' },
     { id: 'deals', label: 'Deals', description: 'Pipeline & deals', icon: Briefcase, action: () => go('/deals'), keywords: 'deal pipeline kanban' },
     { id: 'deals-new', label: 'New Deal', icon: Briefcase, action: () => go('/deals?new=1'), keywords: 'add deal create' },
-    { id: 'invoices', label: 'Invoices', description: 'View all invoices', icon: FileText, action: () => go('/invoices'), keywords: 'invoice billing' },
-    { id: 'invoices-new', label: 'New Invoice', icon: FileText, action: () => go('/invoices/new'), keywords: 'add invoice create bill' },
     { id: 'installments', label: 'Installments', description: 'Payment schedule', icon: CalendarClock, action: () => go('/installments'), keywords: 'payment installment schedule' },
     { id: 'expenses', label: 'Expenses', description: 'Track expenses', icon: Receipt, action: () => go('/expenses'), keywords: 'expense cost spend' },
     { id: 'expenses-new', label: 'New Expense', icon: Receipt, action: () => go('/expenses?new=1'), keywords: 'add expense create' },
+    { id: 'work', label: 'Work Tracker', description: 'Logs & checklists', icon: ClipboardList, action: () => go('/work'), keywords: 'work log checklist task' },
     { id: 'settings', label: 'Settings', icon: Settings, action: () => go('/settings'), keywords: 'profile password' },
-    { id: 'admin', label: 'Admin Panel', icon: ShieldCheck, action: () => go('/admin'), keywords: 'admin users team activity', adminOnly: true },
+    { id: 'admin', label: 'Admin Panel', icon: ShieldCheck, action: () => go('/admin'), keywords: 'admin users team activity' },
   ]
 
   const filtered = commands.filter((c) => {
-    if (c.adminOnly && !isAdmin) return false
     if (!query) return true
     const q = query.toLowerCase()
     return (

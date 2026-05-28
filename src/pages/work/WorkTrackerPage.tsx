@@ -15,6 +15,7 @@ import EmptyState from '@/components/ui/EmptyState'
 import { SkeletonCard } from '@/components/ui/Skeleton'
 import LogWorkModal from '@/components/modules/LogWorkModal'
 import ChecklistItemModal from '@/components/modules/ChecklistItemModal'
+import { useRealtimeSync } from '@/hooks/useRealtimeSync'
 import toast from 'react-hot-toast'
 
 type EnrichedLog = WorkLog & {
@@ -43,7 +44,7 @@ const PRIORITY_LABELS: Record<ChecklistPriority, string> = { urgent: 'Urgent', h
 
 export default function WorkTrackerPage() {
   const navigate = useNavigate()
-  const { profile, isAdmin } = useAuth()
+  const { profile } = useAuth()
   const isMobile = useIsMobile()
 
   const [activeTab, setActiveTab] = useState<'logs' | 'checklists'>('logs')
@@ -116,6 +117,24 @@ export default function WorkTrackerPage() {
     fetchLogs()
     fetchItems()
   }, [fetchShared, fetchLogs, fetchItems])
+
+  const { flashId: logFlashId, flashType: logFlashType } = useRealtimeSync('work_logs', fetchLogs, {
+    getToastMessage: (p) => {
+      if (p.eventType !== 'INSERT') return null
+      const title = p.new?.title as string | undefined
+      return title ? `Work logged: "${title}"` : null
+    },
+  })
+  useRealtimeSync('checklist_items', fetchItems, {
+    getToastMessage: (p) => {
+      if (p.eventType !== 'UPDATE') return null
+      if (p.new?.is_done && !p.old?.is_done) {
+        const title = p.new?.title as string | undefined
+        return title ? `Task completed: "${title}"` : null
+      }
+      return null
+    },
+  })
 
   // Close three-dot menu on outside click
   useEffect(() => {
@@ -419,8 +438,8 @@ export default function WorkTrackerPage() {
                     </span>
                   </div>
                   {isMobile
-                    ? <div className="p-3 space-y-2">{group.logs.map((log) => <LogCard key={log.id} log={log} currentUserId={profile?.id ?? ''} isAdmin={isAdmin} onEdit={(l) => setLogModal({ open: true, log: l as WorkLog })} onDelete={deleteLog} />)}</div>
-                    : <div>{group.logs.map((log) => <LogRow key={log.id} log={log} currentUserId={profile?.id ?? ''} isAdmin={isAdmin} onEdit={(l) => setLogModal({ open: true, log: l as WorkLog })} onDelete={deleteLog} navigate={navigate} />)}</div>
+                    ? <div className="p-3 space-y-2">{group.logs.map((log) => <div key={log.id} className={logFlashId === log.id ? `rt-flash-${logFlashType}` : ''}><LogCard log={log} onEdit={(l) => setLogModal({ open: true, log: l as WorkLog })} onDelete={deleteLog} /></div>)}</div>
+                    : <div>{group.logs.map((log) => <div key={log.id} className={logFlashId === log.id ? `rt-flash-${logFlashType}` : ''}><LogRow log={log} onEdit={(l) => setLogModal({ open: true, log: l as WorkLog })} onDelete={deleteLog} navigate={navigate} /></div>)}</div>
                   }
                 </Card>
               ))}
@@ -428,7 +447,7 @@ export default function WorkTrackerPage() {
           ) : (
             <Card>
               {isMobile
-                ? <div className="p-3 space-y-2">{filteredLogs.map((log) => <LogCard key={log.id} log={log} currentUserId={profile?.id ?? ''} isAdmin={isAdmin} onEdit={(l) => setLogModal({ open: true, log: l as WorkLog })} onDelete={deleteLog} />)}</div>
+                ? <div className="p-3 space-y-2">{filteredLogs.map((log) => <div key={log.id} className={logFlashId === log.id ? `rt-flash-${logFlashType}` : ''}><LogCard log={log} onEdit={(l) => setLogModal({ open: true, log: l as WorkLog })} onDelete={deleteLog} /></div>)}</div>
                 : (
                   <>
                     {/* Table header */}
@@ -442,7 +461,7 @@ export default function WorkTrackerPage() {
                       <span className="text-[10px] uppercase tracking-wider w-16 text-right flex-shrink-0" style={{ color: 'var(--text-muted)' }}>Time</span>
                       <span className="w-20 flex-shrink-0" />
                     </div>
-                    {filteredLogs.map((log) => <LogRow key={log.id} log={log} currentUserId={profile?.id ?? ''} isAdmin={isAdmin} onEdit={(l) => setLogModal({ open: true, log: l as WorkLog })} onDelete={deleteLog} navigate={navigate} />)}
+                    {filteredLogs.map((log) => <div key={log.id} className={logFlashId === log.id ? `rt-flash-${logFlashType}` : ''}><LogRow log={log} onEdit={(l) => setLogModal({ open: true, log: l as WorkLog })} onDelete={deleteLog} navigate={navigate} /></div>)}
                   </>
                 )
               }
@@ -563,9 +582,8 @@ export default function WorkTrackerPage() {
                   pendingItems={pendingItems}
                   doneItems={doneItems}
                   navigate={navigate}
-                  currentUserId={profile?.id ?? ''}
-                  isAdmin={isAdmin}
-                  onToggle={toggleItemDone}
+
+                                   onToggle={toggleItemDone}
                   onEdit={(item) => setItemModal({ open: true, item: item as ChecklistItem })}
                   onDelete={deleteItem}
                   openMenuId={openMenuId}
@@ -616,10 +634,8 @@ function getInitials(name?: string | null, override?: string | null): string {
   return name?.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() ?? '?'
 }
 
-function LogRow({ log, currentUserId, isAdmin, onEdit, onDelete, navigate }: {
+function LogRow({ log, onEdit, onDelete, navigate }: {
   log: EnrichedLog
-  currentUserId: string
-  isAdmin: boolean
   onEdit: (log: EnrichedLog) => void
   onDelete: (log: EnrichedLog) => void
   navigate: ReturnType<typeof useNavigate>
@@ -628,7 +644,7 @@ function LogRow({ log, currentUserId, isAdmin, onEdit, onDelete, navigate }: {
   const deal = log.deal as { id?: string; title?: string } | null
   const prof = log.profile as { full_name?: string; avatar_initials?: string } | null
   const initials = getInitials(prof?.full_name, prof?.avatar_initials)
-  const canEdit = log.logged_by === currentUserId || isAdmin
+  const canEdit = true
 
   return (
     <div className="flex items-center gap-4 px-5 py-3"
@@ -673,17 +689,15 @@ function LogRow({ log, currentUserId, isAdmin, onEdit, onDelete, navigate }: {
   )
 }
 
-function LogCard({ log, currentUserId, isAdmin, onEdit, onDelete }: {
+function LogCard({ log, onEdit, onDelete }: {
   log: EnrichedLog
-  currentUserId: string
-  isAdmin: boolean
   onEdit: (log: EnrichedLog) => void
   onDelete: (log: EnrichedLog) => void
 }) {
   const client = log.client as { id?: string; name?: string } | null
   const prof = log.profile as { full_name?: string; avatar_initials?: string } | null
   const initials = getInitials(prof?.full_name, prof?.avatar_initials)
-  const canEdit = log.logged_by === currentUserId || isAdmin
+  const canEdit = true
 
   return (
     <div className="rounded-lg p-4" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)' }}>
@@ -719,14 +733,12 @@ function LogCard({ log, currentUserId, isAdmin, onEdit, onDelete }: {
   )
 }
 
-function ClientSection({ clientId, clientName, pendingItems, doneItems, navigate, currentUserId, isAdmin, onToggle, onEdit, onDelete, openMenuId, setOpenMenuId, onQuickAdd }: {
+function ClientSection({ clientId, clientName, pendingItems, doneItems, navigate, onToggle, onEdit, onDelete, openMenuId, setOpenMenuId, onQuickAdd }: {
   clientId: string
   clientName: string
   pendingItems: EnrichedItem[]
   doneItems: EnrichedItem[]
   navigate: ReturnType<typeof useNavigate>
-  currentUserId: string
-  isAdmin: boolean
   onToggle: (item: EnrichedItem) => void
   onEdit: (item: EnrichedItem) => void
   onDelete: (item: EnrichedItem) => void
@@ -781,8 +793,6 @@ function ClientSection({ clientId, clientName, pendingItems, doneItems, navigate
               key={item.id}
               item={item}
               navigate={navigate}
-              currentUserId={currentUserId}
-              isAdmin={isAdmin}
               onToggle={onToggle}
               onEdit={onEdit}
               onDelete={onDelete}
@@ -804,8 +814,6 @@ function ClientSection({ clientId, clientName, pendingItems, doneItems, navigate
                   key={item.id}
                   item={item}
                   navigate={navigate}
-                  currentUserId={currentUserId}
-                  isAdmin={isAdmin}
                   onToggle={onToggle}
                   onEdit={onEdit}
                   onDelete={onDelete}
@@ -831,11 +839,9 @@ function ClientSection({ clientId, clientName, pendingItems, doneItems, navigate
   )
 }
 
-function ChecklistItemRow({ item, navigate, currentUserId, isAdmin, onToggle, onEdit, onDelete, openMenuId, setOpenMenuId }: {
+function ChecklistItemRow({ item, navigate, onToggle, onEdit, onDelete, openMenuId, setOpenMenuId }: {
   item: EnrichedItem
   navigate: ReturnType<typeof useNavigate>
-  currentUserId: string
-  isAdmin: boolean
   onToggle: (item: EnrichedItem) => void
   onEdit: (item: EnrichedItem) => void
   onDelete: (item: EnrichedItem) => void
@@ -846,7 +852,7 @@ function ChecklistItemRow({ item, navigate, currentUserId, isAdmin, onToggle, on
   const assigneeInitials = getInitials(assignee?.full_name, assignee?.avatar_initials)
   const deal = item.deal as { id?: string; title?: string } | null
   const priorityColor = PRIORITY_COLORS[item.priority]
-  const canModify = item.assigned_to === currentUserId || item.created_by === currentUserId || isAdmin
+  const canModify = true
 
   let dueDateColor = 'var(--text-muted)'
   if (item.due_date && !item.is_done) {

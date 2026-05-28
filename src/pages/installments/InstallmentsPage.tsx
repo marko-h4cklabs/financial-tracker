@@ -21,6 +21,7 @@ import EmptyState from '@/components/ui/EmptyState'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import { SkeletonRow, SkeletonCard } from '@/components/ui/Skeleton'
 import InstallmentFormModal from '@/components/modules/InstallmentFormModal'
+import { useRealtimeSync } from '@/hooks/useRealtimeSync'
 import toast from 'react-hot-toast'
 
 type EnrichedInstallment = Installment & { client?: Client; deal?: Deal }
@@ -71,6 +72,17 @@ export default function InstallmentsPage() {
   const isMobile = useIsMobile()
 
   useEffect(() => { fetchInstallments(); fetchDeals(); fetchClients(); fetchKpis() }, [])
+
+  const { flashId, flashType } = useRealtimeSync('installments', () => { fetchInstallments(); fetchKpis() }, {
+    getToastMessage: (p) => {
+      if (p.eventType === 'UPDATE' && p.new?.status === 'paid' && p.old?.status !== 'paid') {
+        const amount = p.new?.amount as number | undefined
+        return amount ? `Installment paid — ${amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : null
+      }
+      if (p.eventType === 'INSERT') return `New installment: "${(p.new?.title as string) ?? ''}"`
+      return null
+    },
+  })
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -498,7 +510,7 @@ export default function InstallmentsPage() {
               description={search || statusFilter ? 'Try adjusting your filters' : 'Add your first payment installment'}
               action={!search && !statusFilter ? { label: 'Add Installment', onClick: () => setShowModal(true) } : undefined} />
           ) : (
-            <Table table={table} />
+            <Table table={table} flashId={flashId} flashType={flashType} />
           )}
         </Card>
       )}
