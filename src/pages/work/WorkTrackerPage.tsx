@@ -135,16 +135,11 @@ export default function WorkTrackerPage() {
     const weekCount = logs.filter((l) => l.worked_on >= weekStartStr).length
     const myMonthCount = logs.filter((l) => l.logged_by === profile?.id && l.worked_on >= monthStartStr).length
 
-    const monthLogs = logs.filter((l) => l.worked_on >= monthStartStr)
-    const clientCounts: Record<string, { count: number; name: string }> = {}
-    monthLogs.forEach((l) => {
-      if (!l.client_id) return
-      const name = (l.client as { name?: string } | null)?.name ?? 'Unknown'
-      clientCounts[l.client_id] = { count: (clientCounts[l.client_id]?.count ?? 0) + 1, name }
-    })
-    const topClient = Object.values(clientCounts).sort((a, b) => b.count - a.count)[0]?.name ?? '—'
+    const totalMonthMinutes = logs
+      .filter((l) => l.worked_on >= monthStartStr)
+      .reduce((s, l) => s + (l.duration_minutes ?? 0), 0)
 
-    return { todayCount, weekCount, myMonthCount, topClient }
+    return { todayCount, weekCount, myMonthCount, totalMonthMinutes }
   }, [logs, profile, todayStr, weekStartStr, monthStartStr])
 
   // Filtered work logs
@@ -315,7 +310,7 @@ export default function WorkTrackerPage() {
                 <StatCard label="Logged Today" value={kpis.todayCount} icon={Clock} goldAccent />
                 <StatCard label="This Week" value={kpis.weekCount} icon={Users} />
                 <StatCard label="Your Logs This Month" value={kpis.myMonthCount} icon={ClipboardList} />
-                <StatCard label="Top Client This Month" value={kpis.topClient} icon={ClipboardList} />
+                <StatCard label="Total Hours This Month" value={kpis.totalMonthMinutes > 0 ? formatDuration(kpis.totalMonthMinutes) : '—'} icon={Clock} />
               </>
             }
           </div>

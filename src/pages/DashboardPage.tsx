@@ -8,7 +8,7 @@ import Card from '@/components/ui/Card'
 import { SkeletonCard } from '@/components/ui/Skeleton'
 import Button from '@/components/ui/Button'
 import toast from 'react-hot-toast'
-import type { ActivityLog, Installment, Invoice, DealStage } from '@/types'
+import type { ActivityLog, Installment, DealStage } from '@/types'
 import { differenceInDays, startOfMonth, endOfMonth, startOfWeek, format } from 'date-fns'
 
 type Period = 'month' | 'overall'
@@ -52,7 +52,6 @@ export default function DashboardPage() {
   const [pipeline, setPipeline] = useState<PipelineColumn[]>([])
   const [activity, setActivity] = useState<ActivityLog[]>([])
   const [upcomingInstallments, setUpcomingInstallments] = useState<Installment[]>([])
-  const [overdueInvoices, setOverdueInvoices] = useState<Invoice[]>([])
   const [loading, setLoading] = useState(true)
 
   const mountedRef = useRef(false)
@@ -77,7 +76,7 @@ export default function DashboardPage() {
   async function fetchAll() {
     setLoading(true)
     try {
-      await Promise.all([fetchKPIs(period), fetchPipeline(), fetchActivity(), fetchInstallments(), fetchOverdueInvoices()])
+      await Promise.all([fetchKPIs(period), fetchPipeline(), fetchActivity(), fetchInstallments()])
     } finally {
       setLoading(false)
     }
@@ -233,16 +232,6 @@ export default function DashboardPage() {
     )
   }
 
-  async function fetchOverdueInvoices() {
-    const { data } = await supabase
-      .from('invoices')
-      .select('*, client:client_id(id, name)')
-      .in('status', ['overdue', 'sent'])
-      .lt('due_date', new Date().toISOString().slice(0, 10))
-      .order('due_date', { ascending: true })
-    setOverdueInvoices((data ?? []) as Invoice[])
-  }
-
   async function markInstallmentPaid(id: string) {
     const { error } = await supabase
       .from('installments')
@@ -387,95 +376,48 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* Installments + Overdue Invoices */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Upcoming Installments */}
-        <Card>
-          <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-            <h3 className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Upcoming Payments</h3>
-            <button onClick={() => navigate('/installments')} className="text-xs" style={{ color: 'var(--gold-primary)' }}>
-              View all →
-            </button>
-          </div>
-          <div className="divide-y" style={{ borderColor: 'var(--border-subtle)' }}>
-            {upcomingInstallments.length === 0 ? (
-              <p className="px-5 py-6 text-xs text-center" style={{ color: 'var(--text-muted)' }}>No upcoming payments</p>
-            ) : (
-              upcomingInstallments.map((inst) => {
-                const days = differenceInDays(new Date(inst.due_date), new Date())
-                const isOverdue = days < 0
-                const client = inst.client as { name?: string } | undefined
-                return (
-                  <div key={inst.id} className="flex items-center justify-between px-5 py-3 gap-3">
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{inst.title}</p>
-                      <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{client?.name ?? '—'}</p>
-                    </div>
-                    <div className="flex items-center gap-3 flex-shrink-0">
-                      <div className="text-right">
-                        <p className="text-sm font-medium" style={{ fontFamily: 'DM Mono, monospace', color: 'var(--gold-primary)' }}>
-                          {formatCurrency(inst.amount, inst.currency)}
-                        </p>
-                        <p className="text-[10px]" style={{ color: isOverdue ? 'var(--status-red)' : days < 7 ? 'var(--status-yellow)' : 'var(--text-muted)' }}>
-                          {formatDaysUntil(inst.due_date)}
-                        </p>
-                      </div>
-                      <Button size="sm" variant="secondary" onClick={() => markInstallmentPaid(inst.id)}>
-                        <CheckCircle size={12} />
-                        Paid
-                      </Button>
-                    </div>
+      {/* Upcoming Installments */}
+      <Card>
+        <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+          <h3 className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Upcoming Payments</h3>
+          <button onClick={() => navigate('/installments')} className="text-xs" style={{ color: 'var(--gold-primary)' }}>
+            View all →
+          </button>
+        </div>
+        <div className="divide-y" style={{ borderColor: 'var(--border-subtle)' }}>
+          {upcomingInstallments.length === 0 ? (
+            <p className="px-5 py-6 text-xs text-center" style={{ color: 'var(--text-muted)' }}>No upcoming payments</p>
+          ) : (
+            upcomingInstallments.map((inst) => {
+              const days = differenceInDays(new Date(inst.due_date), new Date())
+              const isOverdue = days < 0
+              const client = inst.client as { name?: string } | undefined
+              return (
+                <div key={inst.id} className="flex items-center justify-between px-5 py-3 gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{inst.title}</p>
+                    <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{client?.name ?? '—'}</p>
                   </div>
-                )
-              })
-            )}
-          </div>
-        </Card>
-
-        {/* Overdue Invoices */}
-        <Card>
-          <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-            <h3 className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Overdue Invoices</h3>
-            <button onClick={() => navigate('/invoices?status=overdue')} className="text-xs" style={{ color: 'var(--gold-primary)' }}>
-              View all →
-            </button>
-          </div>
-          <div className="divide-y" style={{ borderColor: 'var(--border-subtle)' }}>
-            {overdueInvoices.length === 0 ? (
-              <p className="px-5 py-6 text-xs text-center" style={{ color: 'var(--text-muted)' }}>No overdue invoices</p>
-            ) : (
-              overdueInvoices.map((inv) => {
-                const days = inv.due_date ? differenceInDays(new Date(), new Date(inv.due_date)) : 0
-                const client = inv.client as { name?: string } | undefined
-                return (
-                  <div
-                    key={inv.id}
-                    className="flex items-center justify-between px-5 py-3 gap-3 cursor-pointer"
-                    onClick={() => navigate(`/invoices/${inv.id}`)}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-elevated)')}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                  >
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium truncate" style={{ fontFamily: 'DM Mono, monospace', color: 'var(--gold-primary)' }}>
-                        {inv.invoice_number}
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    <div className="text-right">
+                      <p className="text-sm font-medium" style={{ fontFamily: 'DM Mono, monospace', color: 'var(--gold-primary)' }}>
+                        {formatCurrency(inst.amount, inst.currency)}
                       </p>
-                      <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{client?.name ?? '—'}</p>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <p className="text-sm font-medium" style={{ fontFamily: 'DM Mono, monospace', color: 'var(--text-primary)' }}>
-                        {formatCurrency(inv.total, inv.currency)}
-                      </p>
-                      <p className="text-[10px]" style={{ color: 'var(--status-red)' }}>
-                        {days}d overdue
+                      <p className="text-[10px]" style={{ color: isOverdue ? 'var(--status-red)' : days < 7 ? 'var(--status-yellow)' : 'var(--text-muted)' }}>
+                        {formatDaysUntil(inst.due_date)}
                       </p>
                     </div>
+                    <Button size="sm" variant="secondary" onClick={() => markInstallmentPaid(inst.id)}>
+                      <CheckCircle size={12} />
+                      Paid
+                    </Button>
                   </div>
-                )
-              })
-            )}
-          </div>
-        </Card>
-      </div>
+                </div>
+              )
+            })
+          )}
+        </div>
+      </Card>
       {/* Team Activity This Week */}
       {(teamActivity.length > 0 || recentDone.length > 0) && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

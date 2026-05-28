@@ -5,16 +5,16 @@ import { isBefore, isToday, parseISO } from 'date-fns'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/store/authStore'
 import { formatCurrency, formatDate, formatDuration } from '@/lib/formatters'
-import type { Client, Deal, Invoice, Installment, Expense, Profile, WorkLog, ChecklistItem } from '@/types'
+import type { Client, Deal, Installment, Expense, Profile, WorkLog, ChecklistItem } from '@/types'
 import Button from '@/components/ui/Button'
 import Card from '@/components/ui/Card'
-import { ClientStatusBadge, DealStageBadge, InvoiceStatusBadge, InstallmentStatusBadge, CategoryBadge, WorkCategoryBadge, PRIORITY_COLORS } from '@/components/ui/Badge'
+import { ClientStatusBadge, DealStageBadge, InstallmentStatusBadge, CategoryBadge, WorkCategoryBadge, PRIORITY_COLORS } from '@/components/ui/Badge'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import ClientFormModal from '@/components/modules/ClientFormModal'
 import LogWorkModal from '@/components/modules/LogWorkModal'
 import ChecklistItemModal from '@/components/modules/ChecklistItemModal'
 
-type Tab = 'overview' | 'deals' | 'invoices' | 'installments' | 'expenses' | 'work_logs' | 'tasks' | 'notes'
+type Tab = 'overview' | 'deals' | 'installments' | 'expenses' | 'work_logs' | 'tasks'
 
 type EnrichedWorkLog = WorkLog & {
   profile?: { id: string; full_name: string; avatar_initials?: string | null } | null
@@ -31,7 +31,6 @@ export default function ClientDetailPage() {
   const [client, setClient] = useState<Client | null>(null)
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [deals, setDeals] = useState<Deal[]>([])
-  const [invoices, setInvoices] = useState<Invoice[]>([])
   const [installments, setInstallments] = useState<Installment[]>([])
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [workLogs, setWorkLogs] = useState<EnrichedWorkLog[]>([])
@@ -50,10 +49,9 @@ export default function ClientDetailPage() {
   const fetchClient = useCallback(async () => {
     if (!id) return
     setLoading(true)
-    const [{ data: c }, { data: d }, { data: i }, { data: inst }, { data: e }, { data: p }, { data: wl }, { data: ct }] = await Promise.all([
+    const [{ data: c }, { data: d }, { data: inst }, { data: e }, { data: p }, { data: wl }, { data: ct }] = await Promise.all([
       supabase.from('clients').select('*, assigned_profile:assigned_to(id, full_name)').eq('id', id).single(),
       supabase.from('deals').select('*, assigned_profile:assigned_to(id, full_name)').eq('client_id', id).order('created_at', { ascending: false }),
-      supabase.from('invoices').select('*').eq('client_id', id).order('created_at', { ascending: false }),
       supabase.from('installments').select('*, deal:deal_id(title)').eq('client_id', id).order('due_date', { ascending: true }),
       supabase.from('expenses').select('*').eq('client_id', id).order('expense_date', { ascending: false }),
       supabase.from('profiles').select('*').eq('is_active', true),
@@ -62,7 +60,6 @@ export default function ClientDetailPage() {
     ])
     if (c) { setClient(c as Client); setNotes((c as Client).notes ?? '') }
     setDeals((d ?? []) as Deal[])
-    setInvoices((i ?? []) as Invoice[])
     setInstallments((inst ?? []) as Installment[])
     setExpenses((e ?? []) as Expense[])
     setProfiles((p ?? []) as Profile[])
@@ -92,19 +89,16 @@ export default function ClientDetailPage() {
   }
 
   const initials = client.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
-  const lifetimeValue = invoices.filter((i) => i.status === 'paid').reduce((s, i) => s + Number(i.total), 0)
   const pendingTotal = installments.filter((i) => i.status === 'pending' || i.status === 'overdue').reduce((s, i) => s + Number(i.amount), 0)
   const assignedProfile = client.assigned_profile as { full_name?: string } | undefined
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'overview', label: 'Overview' },
     { key: 'deals', label: `Deals (${deals.length})` },
-    { key: 'invoices', label: `Invoices (${invoices.length})` },
     { key: 'installments', label: `Installments (${installments.length})` },
     { key: 'expenses', label: `Expenses (${expenses.length})` },
     { key: 'work_logs', label: `Work Logs (${workLogs.length})` },
     { key: 'tasks', label: `Tasks (${clientTasks.length})` },
-    { key: 'notes', label: 'Notes' },
   ]
 
   const totalLogMinutes = workLogs.reduce((s, l) => s + (l.duration_minutes ?? 0), 0)
@@ -167,7 +161,6 @@ export default function ClientDetailPage() {
           <div className="flex items-center gap-2 overflow-x-auto">
             <Button variant="secondary" size="sm" onClick={() => setShowEditModal(true)}><Edit size={13} /> Edit</Button>
             <Button size="sm" onClick={() => navigate(`/deals?client=${id}`)}><Plus size={13} /> Deal</Button>
-            <Button size="sm" variant="secondary" onClick={() => navigate(`/invoices/new?client=${id}`)}><FileText size={13} /> Invoice</Button>
           </div>
         </div>
       </Card>
@@ -186,38 +179,49 @@ export default function ClientDetailPage() {
       </div>
 
       {activeTab === 'overview' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="col-span-1 lg:col-span-2">
-            <Card className="p-5">
-              <h3 className="text-xs font-medium uppercase tracking-wider mb-4" style={{ color: 'var(--text-muted)' }}>Contact Information</h3>
-              <div className="space-y-3">
-                {client.email && <div className="flex items-center gap-3"><Mail size={14} style={{ color: 'var(--text-muted)' }} /><span className="text-sm" style={{ color: 'var(--text-primary)' }}>{client.email}</span></div>}
-                {client.phone && <div className="flex items-center gap-3"><Phone size={14} style={{ color: 'var(--text-muted)' }} /><span className="text-sm" style={{ color: 'var(--text-primary)' }}>{client.phone}</span></div>}
-                {(client.address || client.city) && (
-                  <div className="flex items-center gap-3">
-                    <MapPin size={14} style={{ color: 'var(--text-muted)' }} />
-                    <span className="text-sm" style={{ color: 'var(--text-primary)' }}>{[client.address, client.city, client.country].filter(Boolean).join(', ')}</span>
-                  </div>
-                )}
-                {client.tax_id && <div className="flex items-center gap-3"><FileText size={14} style={{ color: 'var(--text-muted)' }} /><span className="text-sm" style={{ color: 'var(--text-primary)' }}>OIB: {client.tax_id}</span></div>}
-                {assignedProfile?.full_name && <div className="flex items-center gap-3"><Briefcase size={14} style={{ color: 'var(--text-muted)' }} /><span className="text-sm" style={{ color: 'var(--text-primary)' }}>Assigned to {assignedProfile.full_name}</span></div>}
-              </div>
-            </Card>
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="col-span-1 lg:col-span-2">
+              <Card className="p-5">
+                <h3 className="text-xs font-medium uppercase tracking-wider mb-4" style={{ color: 'var(--text-muted)' }}>Contact Information</h3>
+                <div className="space-y-3">
+                  {client.email && <div className="flex items-center gap-3"><Mail size={14} style={{ color: 'var(--text-muted)' }} /><span className="text-sm" style={{ color: 'var(--text-primary)' }}>{client.email}</span></div>}
+                  {client.phone && <div className="flex items-center gap-3"><Phone size={14} style={{ color: 'var(--text-muted)' }} /><span className="text-sm" style={{ color: 'var(--text-primary)' }}>{client.phone}</span></div>}
+                  {(client.address || client.city) && (
+                    <div className="flex items-center gap-3">
+                      <MapPin size={14} style={{ color: 'var(--text-muted)' }} />
+                      <span className="text-sm" style={{ color: 'var(--text-primary)' }}>{[client.address, client.city, client.country].filter(Boolean).join(', ')}</span>
+                    </div>
+                  )}
+                  {client.tax_id && <div className="flex items-center gap-3"><FileText size={14} style={{ color: 'var(--text-muted)' }} /><span className="text-sm" style={{ color: 'var(--text-primary)' }}>OIB: {client.tax_id}</span></div>}
+                  {assignedProfile?.full_name && <div className="flex items-center gap-3"><Briefcase size={14} style={{ color: 'var(--text-muted)' }} /><span className="text-sm" style={{ color: 'var(--text-primary)' }}>Assigned to {assignedProfile.full_name}</span></div>}
+                </div>
+              </Card>
+            </div>
+            <div className="space-y-4">
+              <Card className="p-5" goldAccent>
+                <p className="text-xs uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Pending Amount</p>
+                <p className="text-2xl font-light" style={{ fontFamily: 'DM Mono, monospace', color: 'var(--status-yellow)' }}>{formatCurrency(pendingTotal)}</p>
+              </Card>
+              <Card className="p-5">
+                <p className="text-xs uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Client Since</p>
+                <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{formatDate(client.created_at)}</p>
+              </Card>
+            </div>
           </div>
-          <div className="space-y-4">
-            <Card className="p-5" goldAccent>
-              <p className="text-xs uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Lifetime Value</p>
-              <p className="text-2xl font-light" style={{ fontFamily: 'DM Mono, monospace', color: 'var(--gold-primary)' }}>{formatCurrency(lifetimeValue)}</p>
-            </Card>
-            <Card className="p-5">
-              <p className="text-xs uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Pending Amount</p>
-              <p className="text-2xl font-light" style={{ fontFamily: 'DM Mono, monospace', color: 'var(--status-yellow)' }}>{formatCurrency(pendingTotal)}</p>
-            </Card>
-            <Card className="p-5">
-              <p className="text-xs uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Client Since</p>
-              <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{formatDate(client.created_at)}</p>
-            </Card>
-          </div>
+          <Card className="p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Notes</h3>
+              {savingNotes && <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Saving…</span>}
+            </div>
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)}
+              onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border-default)'; saveNotes() }}
+              onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--gold-primary)')}
+              placeholder="Add notes about this client…" rows={5}
+              className="w-full px-3 py-2.5 rounded text-sm outline-none resize-y"
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }}
+            />
+          </Card>
         </div>
       )}
 
@@ -241,34 +245,6 @@ export default function ClientDetailPage() {
                   <div className="flex items-center gap-3">
                     <DealStageBadge stage={deal.stage} />
                     <span style={{ fontFamily: 'DM Mono, monospace', color: 'var(--gold-primary)', fontSize: '13px' }}>{formatCurrency(deal.value, deal.currency)}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-      )}
-
-      {activeTab === 'invoices' && (
-        <Card>
-          <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-            <h3 className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Invoices</h3>
-            <Button size="sm" onClick={() => navigate(`/invoices/new?client=${id}`)}><Plus size={13} /> New Invoice</Button>
-          </div>
-          {invoices.length === 0 ? <p className="px-5 py-8 text-sm text-center" style={{ color: 'var(--text-muted)' }}>No invoices yet</p> : (
-            <div className="divide-y" style={{ borderColor: 'var(--border-subtle)' }}>
-              {invoices.map((inv) => (
-                <div key={inv.id} className="flex items-center justify-between px-5 py-3 cursor-pointer"
-                  onClick={() => navigate(`/invoices/${inv.id}`)}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-elevated)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
-                  <div>
-                    <p className="text-sm font-medium" style={{ fontFamily: 'DM Mono, monospace', color: 'var(--gold-primary)' }}>{inv.invoice_number}</p>
-                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{inv.title} · Due {formatDate(inv.due_date)}</p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <InvoiceStatusBadge status={inv.status} />
-                    <span style={{ fontFamily: 'DM Mono, monospace', color: 'var(--text-primary)', fontSize: '13px' }}>{formatCurrency(inv.total, inv.currency)}</span>
                   </div>
                 </div>
               ))}
@@ -471,21 +447,6 @@ export default function ClientDetailPage() {
             )}
           </Card>
         </div>
-      )}
-
-      {activeTab === 'notes' && (
-        <Card className="p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Notes</h3>
-            {savingNotes && <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Saving…</span>}
-          </div>
-          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} onBlur={saveNotes}
-            placeholder="Add notes about this client…" rows={8}
-            className="w-full px-3 py-2.5 rounded text-sm outline-none resize-y"
-            style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }}
-            onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--gold-primary)')}
-          />
-        </Card>
       )}
 
       {/* Suppress unused import warning */}

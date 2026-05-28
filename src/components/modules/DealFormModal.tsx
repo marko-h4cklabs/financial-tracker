@@ -25,7 +25,6 @@ const schema = z.object({
   retainer_start_date: z.string().optional(),
   retainer_end_date: z.string().optional(),
   currency: z.string().default('EUR'),
-  probability: z.coerce.number().min(0).max(100).default(50),
   start_date: z.string().optional(),
   end_date: z.string().optional(),
   assigned_to: z.string().optional(),
@@ -60,11 +59,10 @@ export default function DealFormModal({ isOpen, onClose, deal, clients, profiles
 
   const { register, handleSubmit, reset, watch, setValue, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { stage: 'proposal', deal_type: 'one_time', currency: 'EUR', probability: 50, value: 0 },
+    defaultValues: { stage: 'proposal', deal_type: 'one_time', currency: 'EUR', value: 0 },
   })
 
   const dealType = watch('deal_type')
-  const probability = watch('probability')
   const retainerAmount = watch('retainer_amount')
   const retainerStart = watch('retainer_start_date')
   const retainerEnd = watch('retainer_end_date')
@@ -90,7 +88,6 @@ export default function DealFormModal({ isOpen, onClose, deal, clients, profiles
         retainer_start_date: deal.retainer_start_date ?? '',
         retainer_end_date: deal.retainer_end_date ?? '',
         currency: deal.currency,
-        probability: deal.probability,
         start_date: deal.start_date ?? '',
         end_date: deal.end_date ?? '',
         assigned_to: deal.assigned_to ?? '',
@@ -98,7 +95,7 @@ export default function DealFormModal({ isOpen, onClose, deal, clients, profiles
         notes: deal.notes ?? '',
       })
     } else {
-      reset({ stage: 'proposal', deal_type: 'one_time', currency: 'EUR', probability: 50, value: 0, client_id: preselectedClientId ?? '' })
+      reset({ stage: 'proposal', deal_type: 'one_time', currency: 'EUR', value: 0, client_id: preselectedClientId ?? '' })
     }
   }, [deal, reset, isOpen, preselectedClientId])
 
@@ -119,7 +116,6 @@ export default function DealFormModal({ isOpen, onClose, deal, clients, profiles
       deal_type: data.deal_type,
       value: computedValue,
       currency: data.currency,
-      probability: data.probability,
       start_date: data.start_date || null,
       end_date: data.end_date || null,
       assigned_to: data.assigned_to || null,
@@ -228,22 +224,6 @@ export default function DealFormModal({ isOpen, onClose, deal, clients, profiles
             )}
           </div>
         )}
-
-        <div>
-          <label className="block text-xs font-medium uppercase tracking-wider mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-            Probability: {probability}%
-          </label>
-          <input
-            type="range" min="0" max="100" step="5"
-            className="w-full h-1 rounded"
-            style={{ accentColor: 'var(--gold-primary)' }}
-            {...register('probability')}
-            onChange={(e) => setValue('probability', Number(e.target.value))}
-          />
-          <div className="flex justify-between text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
-            <span>0%</span><span>50%</span><span>100%</span>
-          </div>
-        </div>
 
         <div className="grid grid-cols-2 gap-4">
           <Input label="Start Date" type="date" {...register('start_date')} />

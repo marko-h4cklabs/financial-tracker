@@ -11,9 +11,6 @@ import ClientsPage from '@/pages/clients/ClientsPage'
 import ClientDetailPage from '@/pages/clients/ClientDetailPage'
 import DealsPage from '@/pages/deals/DealsPage'
 import DealDetailPage from '@/pages/deals/DealDetailPage'
-import InvoicesPage from '@/pages/invoices/InvoicesPage'
-import InvoiceDetailPage from '@/pages/invoices/InvoiceDetailPage'
-import InvoiceFormPage from '@/pages/invoices/InvoiceFormPage'
 import InstallmentsPage from '@/pages/installments/InstallmentsPage'
 import ExpensesPage from '@/pages/expenses/ExpensesPage'
 import WorkTrackerPage from '@/pages/work/WorkTrackerPage'
@@ -57,9 +54,6 @@ export default function App() {
         <Route path="/clients/:id" element={<Protected><ClientDetailPage /></Protected>} />
         <Route path="/deals" element={<Protected><DealsPage /></Protected>} />
         <Route path="/deals/:id" element={<Protected><DealDetailPage /></Protected>} />
-        <Route path="/invoices" element={<Protected><InvoicesPage /></Protected>} />
-        <Route path="/invoices/new" element={<Protected><InvoiceFormPage /></Protected>} />
-        <Route path="/invoices/:id" element={<Protected><InvoiceDetailPage /></Protected>} />
         <Route path="/installments" element={<Protected><InstallmentsPage /></Protected>} />
         <Route path="/expenses" element={<Protected><ExpensesPage /></Protected>} />
         <Route path="/work" element={<Protected><WorkTrackerPage /></Protected>} />

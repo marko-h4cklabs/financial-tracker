@@ -182,17 +182,6 @@ export default function DealsPage() {
         )
       },
     }),
-    helper.accessor('probability', {
-      header: 'Probability',
-      cell: ({ getValue }) => (
-        <div className="flex items-center gap-2 w-24">
-          <div className="flex-1 h-1 rounded-full" style={{ background: 'var(--border-default)' }}>
-            <div className="h-full rounded-full" style={{ width: `${getValue()}%`, background: 'var(--gold-primary)' }} />
-          </div>
-          <span className="text-xs" style={{ color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>{getValue()}%</span>
-        </div>
-      ),
-    }),
     helper.display({
       id: 'assigned',
       header: 'Assigned',

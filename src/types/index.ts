@@ -45,7 +45,7 @@ export interface Deal {
   currency: string
   start_date: string | null
   end_date: string | null
-  probability: number
+  probability?: number
   assigned_to: string | null
   created_by: string | null
   notes: string | null
