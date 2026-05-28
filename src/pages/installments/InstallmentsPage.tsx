@@ -4,7 +4,7 @@ import {
   useReactTable, getCoreRowModel, getSortedRowModel,
   createColumnHelper, type SortingState,
 } from '@tanstack/react-table'
-import { Plus, CalendarClock, CheckCircle, Clock, AlertTriangle, TrendingUp, MoreHorizontal, X, ChevronDown, ChevronRight } from 'lucide-react'
+import { Plus, CalendarClock, CheckCircle, Clock, AlertTriangle, TrendingUp, X, ChevronDown, ChevronRight } from 'lucide-react'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { format, addDays, differenceInDays, startOfMonth, endOfMonth, isSameDay } from 'date-fns'
 import { supabase } from '@/lib/supabase'
@@ -22,6 +22,7 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import { SkeletonRow, SkeletonCard } from '@/components/ui/Skeleton'
 import InstallmentFormModal from '@/components/modules/InstallmentFormModal'
 import { useRealtimeSync } from '@/hooks/useRealtimeSync'
+import TableActionsMenu from '@/components/ui/TableActionsMenu'
 import toast from 'react-hot-toast'
 
 type EnrichedInstallment = Installment & { client?: Client; deal?: Deal }
@@ -53,8 +54,7 @@ export default function InstallmentsPage() {
   const [showModal, setShowModal] = useState(false)
   const [selectedDealId, setSelectedDealId] = useState('')
 
-  // Three-dot menu + edit + delete
-  const [actionsMenu, setActionsMenu] = useState<string | null>(null)
+  // Edit + delete
   const [editInstallment, setEditInstallment] = useState<EnrichedInstallment | null>(null)
   const [showEditModal, setShowEditModal] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null)
@@ -89,7 +89,6 @@ export default function InstallmentsPage() {
       if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
         setPaidPopover(null)
       }
-      setActionsMenu(null)
     }
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
@@ -296,50 +295,21 @@ export default function InstallmentsPage() {
       header: '',
       cell: ({ row }) => {
         const inst = row.original
-        const isMenuOpen = actionsMenu === inst.id
         const isMarkPaidOpen = paidPopover === inst.id
         return (
           <div className="relative flex items-center justify-end" onClick={(e) => e.stopPropagation()}>
-            <button
-              onClick={(e) => { e.stopPropagation(); setActionsMenu(isMenuOpen ? null : inst.id); setPaidPopover(null) }}
-              className="w-7 h-7 rounded flex items-center justify-center"
-              style={{ color: 'var(--text-muted)' }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
-              onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}>
-              <MoreHorizontal size={14} />
-            </button>
-
-            {isMenuOpen && (
-              <div className="absolute right-0 top-8 w-40 rounded shadow-lg z-30 py-1"
-                style={{ background: 'var(--bg-overlay)', border: '1px solid var(--border-default)' }}>
-                {inst.status === 'pending' && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setActionsMenu(null); setPaidPopover(inst.id); setPaidDate(new Date().toISOString().slice(0, 10)); setPaidMethod('bank_transfer') }}
-                    className="w-full text-left px-3 py-2 text-xs"
-                    style={{ color: 'var(--status-green)' }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-elevated)' }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
-                    Mark as Paid
-                  </button>
-                )}
-                <button
-                  onClick={(e) => { e.stopPropagation(); setActionsMenu(null); setEditInstallment(inst); setShowEditModal(true) }}
-                  className="w-full text-left px-3 py-2 text-xs"
-                  style={{ color: 'var(--text-secondary)' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-elevated)' }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
-                  Edit
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); setActionsMenu(null); setDeleteTarget({ id: inst.id, title: inst.title }) }}
-                  className="w-full text-left px-3 py-2 text-xs"
-                  style={{ color: 'var(--status-red)' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(224,82,82,0.08)' }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
-                  Delete
-                </button>
-              </div>
-            )}
+            <TableActionsMenu minWidth={160} items={[
+              ...(inst.status === 'pending' ? [{
+                label: 'Mark as Paid',
+                action: () => {
+                  setPaidPopover(inst.id)
+                  setPaidDate(new Date().toISOString().slice(0, 10))
+                  setPaidMethod('bank_transfer')
+                },
+              }] : []),
+              { label: 'Edit',   action: () => { setEditInstallment(inst); setShowEditModal(true) } },
+              { label: 'Delete', action: () => setDeleteTarget({ id: inst.id, title: inst.title }), danger: true },
+            ]} />
 
             {isMarkPaidOpen && (
               <div ref={popoverRef}
@@ -385,7 +355,7 @@ export default function InstallmentsPage() {
         )
       },
     }),
-  ], [actionsMenu, paidPopover, paidDate, paidMethod, marking, today, navigate])
+  ], [paidPopover, paidDate, paidMethod, marking, today, navigate])
 
   const table = useReactTable({
     data: filtered,

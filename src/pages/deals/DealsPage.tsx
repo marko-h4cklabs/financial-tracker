@@ -20,6 +20,7 @@ import EmptyState from '@/components/ui/EmptyState'
 import { SkeletonRow } from '@/components/ui/Skeleton'
 import DealFormModal from '@/components/modules/DealFormModal'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
+import TableActionsMenu from '@/components/ui/TableActionsMenu'
 import { useRealtimeSync } from '@/hooks/useRealtimeSync'
 import toast from 'react-hot-toast'
 import { Briefcase } from 'lucide-react'
@@ -229,39 +230,16 @@ export default function DealsPage() {
       id: 'actions',
       header: '',
       cell: ({ row }) => (
-        <div className="relative">
-          <button
-            onClick={(e) => { e.stopPropagation(); setMenuOpen(menuOpen === row.original.id ? null : row.original.id) }}
-            className="w-7 h-7 rounded flex items-center justify-center"
-            style={{ color: 'var(--text-muted)' }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
-            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}>
-            <MoreHorizontal size={15} />
-          </button>
-          {menuOpen === row.original.id && (
-            <div className="absolute right-0 top-8 w-40 rounded shadow-lg z-10 py-1"
-              style={{ background: 'var(--bg-overlay)', border: '1px solid var(--border-default)' }}>
-              {[
-                { label: 'View', danger: false, action: () => { navigate(`/deals/${row.original.id}`); setMenuOpen(null) } },
-                { label: 'Edit', danger: false, action: () => { setEditDeal(row.original); setShowModal(true); setMenuOpen(null) } },
-                { label: 'Move to Won', danger: false, action: () => { updateDealStage(row.original.id, 'won'); setMenuOpen(null) } },
-                { label: 'Move to Lost', danger: false, action: () => { updateDealStage(row.original.id, 'lost'); setMenuOpen(null) } },
-                { label: 'Delete', danger: true, action: () => { setDeleteTarget({ id: row.original.id, title: row.original.title }); setMenuOpen(null) } },
-              ].map(({ label, action, danger }) => (
-                <button key={label} onClick={(e) => { e.stopPropagation(); action() }}
-                  className="w-full text-left px-3 py-2 text-xs"
-                  style={{ color: danger ? 'var(--status-red)' : 'var(--text-secondary)' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = danger ? 'rgba(224,82,82,0.08)' : 'var(--bg-elevated)' }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <TableActionsMenu minWidth={160} items={[
+          { label: 'View',         action: () => navigate(`/deals/${row.original.id}`) },
+          { label: 'Edit',         action: () => { setEditDeal(row.original); setShowModal(true) } },
+          { label: 'Move to Won',  action: () => updateDealStage(row.original.id, 'won') },
+          { label: 'Move to Lost', action: () => updateDealStage(row.original.id, 'lost') },
+          { label: 'Delete',       action: () => setDeleteTarget({ id: row.original.id, title: row.original.title }), danger: true },
+        ]} />
       ),
     }),
-  ], [menuOpen, navigate])
+  ], [navigate])
 
   const table = useReactTable({
     data: filtered,

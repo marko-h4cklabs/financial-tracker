@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, ClipboardList, Clock, Users, ChevronDown, ChevronRight, MoreVertical, Check } from 'lucide-react'
+import { Plus, ClipboardList, Clock, Users, ChevronDown, ChevronRight, Check } from 'lucide-react'
 import { format, startOfWeek, startOfMonth, isBefore, isToday, parseISO } from 'date-fns'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/store/authStore'
@@ -16,6 +16,7 @@ import { SkeletonCard } from '@/components/ui/Skeleton'
 import LogWorkModal from '@/components/modules/LogWorkModal'
 import ChecklistItemModal from '@/components/modules/ChecklistItemModal'
 import { useRealtimeSync } from '@/hooks/useRealtimeSync'
+import TableActionsMenu from '@/components/ui/TableActionsMenu'
 import toast from 'react-hot-toast'
 
 type EnrichedLog = WorkLog & {
@@ -77,7 +78,6 @@ export default function WorkTrackerPage() {
   const [checkStatusFilter, setCheckStatusFilter] = useState<'all' | 'pending' | 'done'>('all')
   const [checkDueFilter, setCheckDueFilter] = useState<'all' | 'overdue' | 'today' | 'week'>('all')
   const [itemModal, setItemModal] = useState<{ open: boolean; item: ChecklistItem | null; preClientId?: string }>({ open: false, item: null })
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
 
   const fetchShared = useCallback(async () => {
     const [{ data: c }, { data: p }] = await Promise.all([
@@ -136,13 +136,6 @@ export default function WorkTrackerPage() {
     },
   })
 
-  // Close three-dot menu on outside click
-  useEffect(() => {
-    if (!openMenuId) return
-    const handler = () => setOpenMenuId(null)
-    document.addEventListener('click', handler)
-    return () => document.removeEventListener('click', handler)
-  }, [openMenuId])
 
   // KPIs computed from loaded data
   const todayStr = format(new Date(), 'yyyy-MM-dd')
@@ -586,8 +579,7 @@ export default function WorkTrackerPage() {
                                    onToggle={toggleItemDone}
                   onEdit={(item) => setItemModal({ open: true, item: item as ChecklistItem })}
                   onDelete={deleteItem}
-                  openMenuId={openMenuId}
-                  setOpenMenuId={setOpenMenuId}
+
                   onQuickAdd={(cid) => setItemModal({ open: true, item: null, preClientId: cid })}
                 />
               ))}
@@ -733,7 +725,7 @@ function LogCard({ log, onEdit, onDelete }: {
   )
 }
 
-function ClientSection({ clientId, clientName, pendingItems, doneItems, navigate, onToggle, onEdit, onDelete, openMenuId, setOpenMenuId, onQuickAdd }: {
+function ClientSection({ clientId, clientName, pendingItems, doneItems, navigate, onToggle, onEdit, onDelete, onQuickAdd }: {
   clientId: string
   clientName: string
   pendingItems: EnrichedItem[]
@@ -742,8 +734,6 @@ function ClientSection({ clientId, clientName, pendingItems, doneItems, navigate
   onToggle: (item: EnrichedItem) => void
   onEdit: (item: EnrichedItem) => void
   onDelete: (item: EnrichedItem) => void
-  openMenuId: string | null
-  setOpenMenuId: (id: string | null) => void
   onQuickAdd: (clientId: string) => void
 }) {
   const hasAnyPending = pendingItems.length > 0
@@ -796,8 +786,6 @@ function ClientSection({ clientId, clientName, pendingItems, doneItems, navigate
               onToggle={onToggle}
               onEdit={onEdit}
               onDelete={onDelete}
-              openMenuId={openMenuId}
-              setOpenMenuId={setOpenMenuId}
             />
           ))}
 
@@ -817,8 +805,7 @@ function ClientSection({ clientId, clientName, pendingItems, doneItems, navigate
                   onToggle={onToggle}
                   onEdit={onEdit}
                   onDelete={onDelete}
-                  openMenuId={openMenuId}
-                  setOpenMenuId={setOpenMenuId}
+
                 />
               ))}
             </div>
@@ -839,21 +826,17 @@ function ClientSection({ clientId, clientName, pendingItems, doneItems, navigate
   )
 }
 
-function ChecklistItemRow({ item, navigate, onToggle, onEdit, onDelete, openMenuId, setOpenMenuId }: {
+function ChecklistItemRow({ item, navigate, onToggle, onEdit, onDelete }: {
   item: EnrichedItem
   navigate: ReturnType<typeof useNavigate>
   onToggle: (item: EnrichedItem) => void
   onEdit: (item: EnrichedItem) => void
   onDelete: (item: EnrichedItem) => void
-  openMenuId: string | null
-  setOpenMenuId: (id: string | null) => void
 }) {
   const assignee = item.assignee as { full_name?: string; avatar_initials?: string } | null
   const assigneeInitials = getInitials(assignee?.full_name, assignee?.avatar_initials)
   const deal = item.deal as { id?: string; title?: string } | null
   const priorityColor = PRIORITY_COLORS[item.priority]
-  const canModify = true
-
   let dueDateColor = 'var(--text-muted)'
   if (item.due_date && !item.is_done) {
     const d = parseISO(item.due_date)
@@ -914,37 +897,15 @@ function ChecklistItemRow({ item, navigate, onToggle, onEdit, onDelete, openMenu
       )}
 
       {/* Three-dot menu */}
-      {canModify && (
-        <div className="relative flex-shrink-0">
-          <button
-            onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === item.id ? null : item.id) }}
-            className="w-6 h-6 rounded flex items-center justify-center transition-opacity"
-            style={{ color: 'var(--text-muted)', opacity: openMenuId === item.id ? 1 : undefined }}
-            onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
-            onMouseLeave={(e) => { if (openMenuId !== item.id) e.currentTarget.style.opacity = '0' }}>
-            <MoreVertical size={12} />
-          </button>
-          {openMenuId === item.id && (
-            <div className="absolute right-0 top-7 z-20 rounded-lg shadow-xl py-1 min-w-[96px]"
-              style={{ background: 'var(--bg-overlay)', border: '1px solid var(--border-default)' }}>
-              <button onClick={(e) => { e.stopPropagation(); onEdit(item); setOpenMenuId(null) }}
-                className="w-full text-left px-3 py-2 text-xs"
-                style={{ color: 'var(--text-secondary)' }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-elevated)')}
-                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
-                Edit
-              </button>
-              <button onClick={(e) => { e.stopPropagation(); onDelete(item); setOpenMenuId(null) }}
-                className="w-full text-left px-3 py-2 text-xs"
-                style={{ color: 'var(--status-red)' }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(224,82,82,0.08)')}
-                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
-                Delete
-              </button>
-            </div>
-          )}
-        </div>
-      )}
+      <TableActionsMenu
+        vertical
+        iconSize={12}
+        minWidth={96}
+        items={[
+          { label: 'Edit',   action: () => onEdit(item) },
+          { label: 'Delete', action: () => onDelete(item), danger: true },
+        ]}
+      />
     </div>
   )
 }

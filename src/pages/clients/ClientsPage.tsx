@@ -8,7 +8,7 @@ import {
   createColumnHelper,
   type SortingState,
 } from '@tanstack/react-table'
-import { Users, MoreHorizontal, Plus, ChevronDown } from 'lucide-react'
+import { Users, Plus, ChevronDown } from 'lucide-react'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/store/authStore'
@@ -21,6 +21,7 @@ import EmptyState from '@/components/ui/EmptyState'
 import { SkeletonRow } from '@/components/ui/Skeleton'
 import ClientFormModal from '@/components/modules/ClientFormModal'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
+import TableActionsMenu from '@/components/ui/TableActionsMenu'
 import { useRealtimeSync } from '@/hooks/useRealtimeSync'
 import toast from 'react-hot-toast'
 
@@ -40,7 +41,6 @@ export default function ClientsPage() {
   const [sorting, setSorting] = useState<SortingState>([])
   const [showModal, setShowModal] = useState(false)
   const [editClient, setEditClient] = useState<Client | null>(null)
-  const [menuOpen, setMenuOpen] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
   const [filtersOpen, setFiltersOpen] = useState(false)
   const isMobile = useIsMobile()
@@ -172,47 +172,22 @@ export default function ClientsPage() {
       id: 'actions',
       header: '',
       cell: ({ row }) => (
-        <div className="relative">
-          <button
-            onClick={(e) => { e.stopPropagation(); setMenuOpen(menuOpen === row.original.id ? null : row.original.id) }}
-            className="w-7 h-7 rounded flex items-center justify-center"
-            style={{ color: 'var(--text-muted)' }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
-            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
-          >
-            <MoreHorizontal size={15} />
-          </button>
-          {menuOpen === row.original.id && (
-            <div className="absolute right-0 top-8 w-36 rounded shadow-lg z-10 py-1"
-              style={{ background: 'var(--bg-overlay)', border: '1px solid var(--border-default)' }}>
-              {[
-                { label: 'View', action: () => { navigate(`/clients/${row.original.id}`); setMenuOpen(null) }, danger: false },
-                { label: 'Edit', action: () => { setEditClient(row.original); setShowModal(true); setMenuOpen(null) }, danger: false },
-                {
-                  label: row.original.status === 'inactive' ? 'Activate' : 'Deactivate',
-                  danger: false,
-                  action: async () => {
-                    const s = row.original.status === 'inactive' ? 'active' : 'inactive'
-                    await supabase.from('clients').update({ status: s }).eq('id', row.original.id)
-                    setMenuOpen(null); fetchClients()
-                  }
-                },
-                { label: 'Delete', danger: true, action: () => { setDeleteTarget({ id: row.original.id, name: row.original.name }); setMenuOpen(null) } },
-              ].map(({ label, action, danger }) => (
-                <button key={label} onClick={(e) => { e.stopPropagation(); action() }}
-                  className="w-full text-left px-3 py-2 text-xs"
-                  style={{ color: danger ? 'var(--status-red)' : 'var(--text-secondary)' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = danger ? 'rgba(224,82,82,0.08)' : 'var(--bg-elevated)' }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <TableActionsMenu items={[
+          { label: 'View',   action: () => navigate(`/clients/${row.original.id}`) },
+          { label: 'Edit',   action: () => { setEditClient(row.original); setShowModal(true) } },
+          {
+            label: row.original.status === 'inactive' ? 'Activate' : 'Deactivate',
+            action: async () => {
+              const s = row.original.status === 'inactive' ? 'active' : 'inactive'
+              await supabase.from('clients').update({ status: s }).eq('id', row.original.id)
+              fetchClients()
+            },
+          },
+          { label: 'Delete', action: () => setDeleteTarget({ id: row.original.id, name: row.original.name }), danger: true },
+        ]} />
       ),
     }),
-  ], [menuOpen, navigate])
+  ], [navigate])
 
   const table = useReactTable({
     data: filtered,
@@ -225,7 +200,7 @@ export default function ClientsPage() {
   })
 
   return (
-    <div className="space-y-4" onClick={() => setMenuOpen(null)}>
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3 md:gap-6">

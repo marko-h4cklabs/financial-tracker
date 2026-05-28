@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Plus, Receipt, TrendingDown, Tag, AlertCircle, MoreHorizontal } from 'lucide-react'
+import { Plus, Receipt, TrendingDown, Tag, AlertCircle } from 'lucide-react'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns'
 import { supabase } from '@/lib/supabase'
@@ -15,6 +15,7 @@ import EmptyState from '@/components/ui/EmptyState'
 import { SkeletonCard } from '@/components/ui/Skeleton'
 import ExpenseFormModal from '@/components/modules/ExpenseFormModal'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
+import TableActionsMenu from '@/components/ui/TableActionsMenu'
 import { useRealtimeSync } from '@/hooks/useRealtimeSync'
 import toast from 'react-hot-toast'
 
@@ -52,7 +53,6 @@ export default function ExpensesPage() {
   const [dealFilter, setDealFilter] = useState(searchParams.get('deal') ?? '')
   const [showModal, setShowModal] = useState(false)
   const [editExpense, setEditExpense] = useState<Expense | null>(null)
-  const [menuOpen, setMenuOpen] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null)
   const [kpis, setKpis] = useState({ thisMonth: 0, thisYear: 0, topCategory: '', unlinked: 0 })
   const [monthlyData, setMonthlyData] = useState<{ month: string; total: number; byCategory: Record<string, number> }[]>([])
@@ -170,7 +170,7 @@ export default function ExpensesPage() {
   const isMobile = useIsMobile()
 
   return (
-    <div className="space-y-4" onClick={() => setMenuOpen(null)}>
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3 md:gap-4">
@@ -322,32 +322,11 @@ export default function ExpensesPage() {
                           <span style={{ fontFamily: 'DM Mono, monospace', color: 'var(--gold-primary)', fontSize: '13px', minWidth: '80px', textAlign: 'right' }}>
                             {formatCurrency(exp.amount, exp.currency)}
                           </span>
-                          <div className="relative" onClick={(e) => e.stopPropagation()}>
-                            <button
-                              onClick={() => setMenuOpen(menuOpen === exp.id ? null : exp.id)}
-                              className="w-7 h-7 rounded flex items-center justify-center"
-                              style={{ color: 'var(--text-muted)' }}
-                              onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
-                              onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}>
-                              <MoreHorizontal size={14} />
-                            </button>
-                            {menuOpen === exp.id && (
-                              <div className="absolute right-0 top-8 w-32 rounded shadow-lg z-20 py-1"
-                                style={{ background: 'var(--bg-overlay)', border: '1px solid var(--border-default)' }}>
-                                <button onClick={() => { setEditExpense(exp); setShowModal(true); setMenuOpen(null) }}
-                                  className="w-full text-left px-3 py-2 text-xs" style={{ color: 'var(--text-secondary)' }}
-                                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-elevated)')}
-                                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
-                                  Edit
-                                </button>
-                                <button onClick={() => { setDeleteTarget({ id: exp.id, title: exp.title }); setMenuOpen(null) }}
-                                  className="w-full text-left px-3 py-2 text-xs" style={{ color: 'var(--status-red)' }}
-                                  onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(224,82,82,0.08)')}
-                                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
-                                  Delete
-                                </button>
-                              </div>
-                            )}
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <TableActionsMenu minWidth={120} items={[
+                              { label: 'Edit',   action: () => { setEditExpense(exp); setShowModal(true) } },
+                              { label: 'Delete', action: () => setDeleteTarget({ id: exp.id, title: exp.title }), danger: true },
+                            ]} />
                           </div>
                         </div>
                       </div>
