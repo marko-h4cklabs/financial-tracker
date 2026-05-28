@@ -163,7 +163,7 @@ export default function ExpensesPage() {
   const isMobile = useIsMobile()
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" onClick={() => setMenuOpen(null)}>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3 md:gap-4">
@@ -315,11 +315,32 @@ export default function ExpensesPage() {
                           <span style={{ fontFamily: 'DM Mono, monospace', color: 'var(--gold-primary)', fontSize: '13px', minWidth: '80px', textAlign: 'right' }}>
                             {formatCurrency(exp.amount, exp.currency)}
                           </span>
-                          <div className="flex items-center gap-1">
-                            <button onClick={() => { setEditExpense(exp); setShowModal(true) }} className="text-xs px-2 py-1 rounded" style={{ color: 'var(--text-muted)' }}
-                              onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')} onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}>Edit</button>
-                            <button onClick={() => deleteExpense(exp.id, exp.title)} className="text-xs px-2 py-1 rounded" style={{ color: 'var(--text-muted)' }}
-                              onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--status-red)')} onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}>Delete</button>
+                          <div className="relative" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              onClick={() => setMenuOpen(menuOpen === exp.id ? null : exp.id)}
+                              className="w-7 h-7 rounded flex items-center justify-center"
+                              style={{ color: 'var(--text-muted)' }}
+                              onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
+                              onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}>
+                              <MoreHorizontal size={14} />
+                            </button>
+                            {menuOpen === exp.id && (
+                              <div className="absolute right-0 top-8 w-32 rounded shadow-lg z-20 py-1"
+                                style={{ background: 'var(--bg-overlay)', border: '1px solid var(--border-default)' }}>
+                                <button onClick={() => { setEditExpense(exp); setShowModal(true); setMenuOpen(null) }}
+                                  className="w-full text-left px-3 py-2 text-xs" style={{ color: 'var(--text-secondary)' }}
+                                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-elevated)')}
+                                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+                                  Edit
+                                </button>
+                                <button onClick={() => { setDeleteTarget({ id: exp.id, title: exp.title }); setMenuOpen(null) }}
+                                  className="w-full text-left px-3 py-2 text-xs" style={{ color: 'var(--status-red)' }}
+                                  onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(224,82,82,0.08)')}
+                                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+                                  Delete
+                                </button>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -365,7 +386,7 @@ export default function ExpensesPage() {
                     <button onClick={() => { setEditExpense(exp); setShowModal(true) }}
                       className="text-xs px-3 py-1.5 rounded"
                       style={{ color: 'var(--text-muted)', border: '1px solid var(--border-default)' }}>Edit</button>
-                    <button onClick={() => deleteExpense(exp.id, exp.title)}
+                    <button onClick={() => setDeleteTarget({ id: exp.id, title: exp.title })}
                       className="text-xs px-3 py-1.5 rounded"
                       style={{ color: 'var(--status-red)', border: '1px solid rgba(224,82,82,0.2)' }}>Delete</button>
                   </div>
@@ -458,6 +479,13 @@ export default function ExpensesPage() {
         currentUserId={profile?.id ?? ''}
         preselectedDealId={dealFilter || undefined}
         onSaved={() => { fetchExpenses(); fetchKpis(); fetchMonthlyData(); setShowModal(false); setEditExpense(null) }}
+      />
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => deleteTarget && deleteExpense(deleteTarget.id)}
+        title={`Delete "${deleteTarget?.title}"?`}
+        message="This cannot be undone."
       />
     </div>
   )
