@@ -4,7 +4,7 @@ import {
   useReactTable, getCoreRowModel, getSortedRowModel,
   createColumnHelper, type SortingState,
 } from '@tanstack/react-table'
-import { Plus, CalendarClock, CheckCircle, Clock, AlertTriangle, TrendingUp } from 'lucide-react'
+import { Plus, CalendarClock, CheckCircle, Clock, AlertTriangle, TrendingUp, MoreHorizontal, X, ChevronDown, ChevronRight } from 'lucide-react'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { format, addDays, differenceInDays, startOfMonth, endOfMonth, isSameDay } from 'date-fns'
 import { supabase } from '@/lib/supabase'
@@ -18,12 +18,21 @@ import Table from '@/components/ui/Table'
 import StatCard from '@/components/ui/StatCard'
 import { InstallmentStatusBadge } from '@/components/ui/Badge'
 import EmptyState from '@/components/ui/EmptyState'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import { SkeletonRow, SkeletonCard } from '@/components/ui/Skeleton'
 import InstallmentFormModal from '@/components/modules/InstallmentFormModal'
 import toast from 'react-hot-toast'
 
 type EnrichedInstallment = Installment & { client?: Client; deal?: Deal }
+type SlidePanelType = 'due_overall' | 'overdue' | 'paid_month'
+
 const helper = createColumnHelper<EnrichedInstallment>()
+
+const PANEL_TITLES: Record<SlidePanelType, string> = {
+  due_overall: 'Due Overall',
+  overdue: 'Overdue',
+  paid_month: 'Paid This Month',
+}
 
 export default function InstallmentsPage() {
   const navigate = useNavigate()
@@ -39,30 +48,36 @@ export default function InstallmentsPage() {
   const [dealFilter, setDealFilter] = useState('')
   const [dateFilter, setDateFilter] = useState('')
   const [sorting, setSorting] = useState<SortingState>([])
-  const [kpis, setKpis] = useState({ dueThisMonth: 0, overdueAmount: 0, overdueCount: 0, paidThisMonth: 0, outstanding: 0 })
+  const [kpis, setKpis] = useState({ dueOverall: 0, overdueAmount: 0, overdueCount: 0, paidThisMonth: 0 })
   const [showModal, setShowModal] = useState(false)
   const [selectedDealId, setSelectedDealId] = useState('')
 
-  // Mark as paid popover state
+  // Three-dot menu + edit + delete
+  const [actionsMenu, setActionsMenu] = useState<string | null>(null)
+  const [editInstallment, setEditInstallment] = useState<EnrichedInstallment | null>(null)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null)
+
+  // Mark as paid popover
   const [paidPopover, setPaidPopover] = useState<string | null>(null)
   const [paidDate, setPaidDate] = useState(new Date().toISOString().slice(0, 10))
   const [paidMethod, setPaidMethod] = useState<PaymentMethod>('bank_transfer')
   const [marking, setMarking] = useState(false)
   const popoverRef = useRef<HTMLDivElement>(null)
+
+  // Slide-over panel
+  const [slidePanel, setSlidePanel] = useState<SlidePanelType | null>(null)
+
   const isMobile = useIsMobile()
 
-  useEffect(() => {
-    fetchInstallments()
-    fetchDeals()
-    fetchClients()
-    fetchKpis()
-  }, [])
+  useEffect(() => { fetchInstallments(); fetchDeals(); fetchClients(); fetchKpis() }, [])
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
         setPaidPopover(null)
       }
+      setActionsMenu(null)
     }
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
@@ -82,22 +97,21 @@ export default function InstallmentsPage() {
     setKpiLoading(true)
     const now = new Date()
     const ms = startOfMonth(now).toISOString().slice(0, 10)
-    const me = endOfMonth(now).toISOString().slice(0, 10)
+    const me = endOfMonth(now).toISOString()
     const today = now.toISOString().slice(0, 10)
 
-    const [{ data: dueMonth }, { data: overdueData }, { data: paidMonth }, { data: outstanding }] = await Promise.all([
-      supabase.from('installments').select('amount').eq('status', 'pending').gte('due_date', ms).lte('due_date', me),
-      supabase.from('installments').select('amount').in('status', ['pending', 'overdue']).lt('due_date', today),
-      supabase.from('installments').select('amount').eq('status', 'paid').gte('paid_at', new Date(ms).toISOString()).lte('paid_at', new Date(me + 'T23:59:59').toISOString()),
+    const [{ data: dueOverallData }, { data: overdueData }, { data: paidMonth }] = await Promise.all([
       supabase.from('installments').select('amount').in('status', ['pending', 'overdue']),
+      supabase.from('installments').select('amount').in('status', ['pending', 'overdue']).lt('due_date', today),
+      supabase.from('installments').select('amount').eq('status', 'paid')
+        .gte('paid_at', new Date(ms).toISOString()).lte('paid_at', me),
     ])
 
     setKpis({
-      dueThisMonth: (dueMonth ?? []).reduce((s, r) => s + Number(r.amount), 0),
+      dueOverall: (dueOverallData ?? []).reduce((s, r) => s + Number(r.amount), 0),
       overdueAmount: (overdueData ?? []).reduce((s, r) => s + Number(r.amount), 0),
       overdueCount: overdueData?.length ?? 0,
       paidThisMonth: (paidMonth ?? []).reduce((s, r) => s + Number(r.amount), 0),
-      outstanding: (outstanding ?? []).reduce((s, r) => s + Number(r.amount), 0),
     })
     setKpiLoading(false)
   }
@@ -123,13 +137,50 @@ export default function InstallmentsPage() {
     await logActivity({ entity_type: 'installment', entity_id: instId, action: 'payment', description: 'Installment marked as paid' })
     toast.success('Marked as paid')
     setPaidPopover(null)
-    fetchInstallments()
-    fetchKpis()
+    fetchInstallments(); fetchKpis()
   }
+
+  async function deleteInstallment(id: string) {
+    await supabase.from('installments').delete().eq('id', id)
+    await logActivity({ entity_type: 'installment', entity_id: id, action: 'delete', description: 'Deleted installment' })
+    toast.success('Installment deleted')
+    fetchInstallments(); fetchKpis()
+  }
+
+  // Slide-over breakdown data
+  const slidePanelData = useMemo(() => {
+    if (!slidePanel) return []
+    const now = new Date()
+    const today = now.toISOString().slice(0, 10)
+    const ms = startOfMonth(now).toISOString()
+    const me = endOfMonth(now).toISOString()
+
+    let subset: EnrichedInstallment[]
+    if (slidePanel === 'due_overall') {
+      subset = installments.filter((i) => ['pending', 'overdue'].includes(i.status))
+    } else if (slidePanel === 'overdue') {
+      subset = installments.filter((i) => ['pending', 'overdue'].includes(i.status) && i.due_date < today)
+    } else {
+      subset = installments.filter((i) => i.status === 'paid' && i.paid_at && i.paid_at >= ms && i.paid_at <= me)
+    }
+
+    const map = new Map<string, { clientId: string; clientName: string; initials: string; items: EnrichedInstallment[]; total: number }>()
+    subset.forEach((inst) => {
+      const client = inst.client as { name?: string } | undefined
+      const clientId = inst.client_id ?? 'no-client'
+      const clientName = client?.name ?? 'Unknown Client'
+      const initials = clientName.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
+      const entry = map.get(clientId) ?? { clientId, clientName, initials, items: [], total: 0 }
+      entry.items.push(inst)
+      entry.total += Number(inst.amount)
+      map.set(clientId, entry)
+    })
+
+    return Array.from(map.values()).sort((a, b) => b.total - a.total)
+  }, [slidePanel, installments])
 
   const today = new Date().toISOString().slice(0, 10)
 
-  // Calendar strip — next 90 days
   const calendarDays = useMemo(() => {
     const days: Date[] = []
     for (let i = 0; i < 90; i++) days.push(addDays(new Date(), i))
@@ -139,8 +190,7 @@ export default function InstallmentsPage() {
   const installmentsByDate = useMemo(() => {
     const map: Record<string, number> = {}
     installments.filter((i) => i.status === 'pending').forEach((i) => {
-      const key = i.due_date
-      map[key] = (map[key] ?? 0) + 1
+      map[i.due_date] = (map[i.due_date] ?? 0) + 1
     })
     return map
   }, [installments])
@@ -234,20 +284,52 @@ export default function InstallmentsPage() {
       header: '',
       cell: ({ row }) => {
         const inst = row.original
-        const isOpen = paidPopover === inst.id
+        const isMenuOpen = actionsMenu === inst.id
+        const isMarkPaidOpen = paidPopover === inst.id
         return (
-          <div className="relative" onClick={(e) => e.stopPropagation()}>
-            {inst.status === 'pending' && (
-              <button
-                onClick={() => { setPaidPopover(isOpen ? null : inst.id); setPaidDate(new Date().toISOString().slice(0, 10)); setPaidMethod('bank_transfer') }}
-                className="flex items-center gap-1 text-xs px-2 py-1 rounded"
-                style={{ color: 'var(--status-green)', border: '1px solid rgba(76,175,125,0.3)', background: 'rgba(76,175,125,0.08)' }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(76,175,125,0.15)' }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(76,175,125,0.08)' }}>
-                <CheckCircle size={11} /> Mark Paid
-              </button>
+          <div className="relative flex items-center justify-end" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={(e) => { e.stopPropagation(); setActionsMenu(isMenuOpen ? null : inst.id); setPaidPopover(null) }}
+              className="w-7 h-7 rounded flex items-center justify-center"
+              style={{ color: 'var(--text-muted)' }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
+              onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}>
+              <MoreHorizontal size={14} />
+            </button>
+
+            {isMenuOpen && (
+              <div className="absolute right-0 top-8 w-40 rounded shadow-lg z-30 py-1"
+                style={{ background: 'var(--bg-overlay)', border: '1px solid var(--border-default)' }}>
+                {inst.status === 'pending' && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setActionsMenu(null); setPaidPopover(inst.id); setPaidDate(new Date().toISOString().slice(0, 10)); setPaidMethod('bank_transfer') }}
+                    className="w-full text-left px-3 py-2 text-xs"
+                    style={{ color: 'var(--status-green)' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-elevated)' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
+                    Mark as Paid
+                  </button>
+                )}
+                <button
+                  onClick={(e) => { e.stopPropagation(); setActionsMenu(null); setEditInstallment(inst); setShowEditModal(true) }}
+                  className="w-full text-left px-3 py-2 text-xs"
+                  style={{ color: 'var(--text-secondary)' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-elevated)' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
+                  Edit
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setActionsMenu(null); setDeleteTarget({ id: inst.id, title: inst.title }) }}
+                  className="w-full text-left px-3 py-2 text-xs"
+                  style={{ color: 'var(--status-red)' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(224,82,82,0.08)' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
+                  Delete
+                </button>
+              </div>
             )}
-            {isOpen && (
+
+            {isMarkPaidOpen && (
               <div ref={popoverRef}
                 className="absolute right-0 bottom-8 w-56 rounded-lg p-3 z-30 space-y-3 shadow-xl"
                 style={{ background: 'var(--bg-overlay)', border: '1px solid var(--border-default)' }}>
@@ -259,8 +341,7 @@ export default function InstallmentsPage() {
                       className="w-full px-2 py-1.5 rounded text-xs outline-none mt-1"
                       style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }}
                       onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--gold-primary)')}
-                      onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border-default)')}
-                    />
+                      onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border-default)')} />
                   </div>
                   <div>
                     <label className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Method</label>
@@ -280,8 +361,7 @@ export default function InstallmentsPage() {
                     style={{ color: 'var(--text-muted)', border: '1px solid var(--border-default)' }}>
                     Cancel
                   </button>
-                  <button onClick={() => confirmMarkPaid(inst.id)}
-                    disabled={marking}
+                  <button onClick={() => confirmMarkPaid(inst.id)} disabled={marking}
                     className="flex-1 py-1.5 rounded text-xs font-medium"
                     style={{ background: 'var(--gold-primary)', color: '#0A0A0A' }}>
                     {marking ? '…' : 'Confirm'}
@@ -293,7 +373,7 @@ export default function InstallmentsPage() {
         )
       },
     }),
-  ], [paidPopover, paidDate, paidMethod, marking, today, navigate])
+  ], [actionsMenu, paidPopover, paidDate, paidMethod, marking, today, navigate])
 
   const table = useReactTable({
     data: filtered,
@@ -312,15 +392,26 @@ export default function InstallmentsPage() {
         <Button onClick={() => setShowModal(true)} className="hidden md:flex"><Plus size={14} /> Add Installment</Button>
       </div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+      {/* KPIs — 3 clickable cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
         {kpiLoading
-          ? Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
+          ? Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)
           : <>
-            <StatCard label="Due This Month" value={formatCurrency(kpis.dueThisMonth)} icon={Clock} goldAccent />
-            <StatCard label="Overdue" value={formatCurrency(kpis.overdueAmount)} subtitle={`${kpis.overdueCount} installments`} icon={AlertTriangle} />
-            <StatCard label="Paid This Month" value={formatCurrency(kpis.paidThisMonth)} icon={TrendingUp} />
-            <StatCard label="Total Outstanding" value={formatCurrency(kpis.outstanding)} icon={CalendarClock} />
+            <button onClick={() => setSlidePanel('due_overall')} className="text-left rounded-lg transition-all"
+              onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.85')}
+              onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}>
+              <StatCard label="Due Overall" value={formatCurrency(kpis.dueOverall)} icon={Clock} goldAccent />
+            </button>
+            <button onClick={() => setSlidePanel('overdue')} className="text-left rounded-lg transition-all"
+              onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.85')}
+              onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}>
+              <StatCard label="Overdue" value={formatCurrency(kpis.overdueAmount)} subtitle={`${kpis.overdueCount} installments`} icon={AlertTriangle} />
+            </button>
+            <button onClick={() => setSlidePanel('paid_month')} className="text-left rounded-lg transition-all"
+              onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.85')}
+              onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}>
+              <StatCard label="Paid This Month" value={formatCurrency(kpis.paidThisMonth)} icon={TrendingUp} />
+            </button>
           </>
         }
       </div>
@@ -335,24 +426,21 @@ export default function InstallmentsPage() {
             {calendarDays.map((day) => {
               const key = format(day, 'yyyy-MM-dd')
               const count = installmentsByDate[key] ?? 0
-              const isToday = isSameDay(day, new Date())
+              const isDayToday = isSameDay(day, new Date())
               const isSelected = dateFilter === key
               return (
-                <button key={key}
-                  onClick={() => setDateFilter(isSelected ? '' : key)}
+                <button key={key} onClick={() => setDateFilter(isSelected ? '' : key)}
                   className="flex flex-col items-center gap-1 px-2 py-2 rounded transition-all"
                   style={{
-                    background: isSelected ? 'var(--gold-muted)' : isToday ? 'var(--bg-elevated)' : 'transparent',
-                    border: `1px solid ${isSelected ? 'var(--gold-primary)' : isToday ? 'var(--border-default)' : 'transparent'}`,
+                    background: isSelected ? 'var(--gold-muted)' : isDayToday ? 'var(--bg-elevated)' : 'transparent',
+                    border: `1px solid ${isSelected ? 'var(--gold-primary)' : isDayToday ? 'var(--border-default)' : 'transparent'}`,
                     minWidth: '36px',
                   }}>
                   <span className="text-[9px] uppercase" style={{ color: 'var(--text-muted)' }}>{format(day, 'EEE')}</span>
-                  <span className="text-xs font-medium" style={{ color: isToday || isSelected ? 'var(--gold-primary)' : 'var(--text-secondary)' }}>
+                  <span className="text-xs font-medium" style={{ color: isDayToday || isSelected ? 'var(--gold-primary)' : 'var(--text-secondary)' }}>
                     {format(day, 'd')}
                   </span>
-                  {count > 0 && (
-                    <div className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--gold-primary)' }} />
-                  )}
+                  {count > 0 && <div className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--gold-primary)' }} />}
                   {count === 0 && <div className="w-1.5 h-1.5" />}
                 </button>
               )
@@ -431,8 +519,7 @@ export default function InstallmentsPage() {
             const days = differenceInDays(new Date(inst.due_date), new Date())
             const isOverdue = inst.status !== 'paid' && inst.due_date < today
             return (
-              <div key={inst.id}
-                className="rounded-lg p-4"
+              <div key={inst.id} className="rounded-lg p-4"
                 style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)' }}>
                 <div className="flex items-start justify-between gap-2 mb-2">
                   <div className="min-w-0">
@@ -451,13 +538,25 @@ export default function InstallmentsPage() {
                   <p className="text-xs" style={{ color: isOverdue ? 'var(--status-red)' : days < 7 && inst.status !== 'paid' ? 'var(--status-yellow)' : 'var(--text-muted)' }}>
                     {inst.status === 'paid' ? `Paid ${formatDate(inst.paid_at ?? '')}` : formatDaysUntil(inst.due_date)}
                   </p>
-                  {inst.status === 'pending' && (
-                    <button onClick={() => { setPaidPopover(inst.id); setPaidDate(new Date().toISOString().slice(0, 10)); setPaidMethod('bank_transfer') }}
-                      className="text-xs px-3 py-1.5 rounded flex items-center gap-1"
-                      style={{ color: 'var(--status-green)', border: '1px solid rgba(76,175,125,0.3)', background: 'rgba(76,175,125,0.08)' }}>
-                      <CheckCircle size={11} /> Mark Paid
+                  <div className="flex items-center gap-2">
+                    {inst.status === 'pending' && (
+                      <button onClick={() => { setPaidPopover(inst.id); setPaidDate(new Date().toISOString().slice(0, 10)); setPaidMethod('bank_transfer') }}
+                        className="text-xs px-2.5 py-1.5 rounded flex items-center gap-1"
+                        style={{ color: 'var(--status-green)', border: '1px solid rgba(76,175,125,0.3)', background: 'rgba(76,175,125,0.08)' }}>
+                        <CheckCircle size={11} /> Pay
+                      </button>
+                    )}
+                    <button onClick={() => { setEditInstallment(inst); setShowEditModal(true) }}
+                      className="text-xs px-2.5 py-1.5 rounded"
+                      style={{ color: 'var(--text-muted)', border: '1px solid var(--border-default)' }}>
+                      Edit
                     </button>
-                  )}
+                    <button onClick={() => setDeleteTarget({ id: inst.id, title: inst.title })}
+                      className="text-xs px-2.5 py-1.5 rounded"
+                      style={{ color: 'var(--status-red)', border: '1px solid rgba(224,82,82,0.2)' }}>
+                      Delete
+                    </button>
+                  </div>
                 </div>
               </div>
             )
@@ -490,10 +589,7 @@ export default function InstallmentsPage() {
             </select>
             <div className="flex gap-3">
               <Button variant="ghost" onClick={() => setShowModal(false)}>Cancel</Button>
-              <Button disabled={!selectedDealId} onClick={() => {
-                setShowModal(false)
-                // navigate to the deal detail page to add installment there, or open InstallmentFormModal
-              }}>Continue</Button>
+              <Button disabled={!selectedDealId} onClick={() => setShowModal(false)}>Continue</Button>
             </div>
           </div>
         </div>
@@ -509,6 +605,123 @@ export default function InstallmentsPage() {
           currentUserId={profile?.id ?? ''}
           onSaved={() => { setSelectedDealId(''); fetchInstallments(); fetchKpis() }}
         />
+      )}
+
+      {showEditModal && editInstallment && (
+        <InstallmentFormModal
+          isOpen={true}
+          onClose={() => { setShowEditModal(false); setEditInstallment(null) }}
+          installment={editInstallment}
+          dealId={editInstallment.deal_id ?? ''}
+          clientId={editInstallment.client_id}
+          currentUserId={profile?.id ?? ''}
+          onSaved={() => { setShowEditModal(false); setEditInstallment(null); fetchInstallments(); fetchKpis() }}
+        />
+      )}
+
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => deleteTarget && deleteInstallment(deleteTarget.id)}
+        title="Delete Installment"
+        message={`Delete "${deleteTarget?.title}"? This cannot be undone.`}
+      />
+
+      {/* Slide-over panel */}
+      {slidePanel && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/40" onClick={() => setSlidePanel(null)} />
+          <div className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-md flex flex-col shadow-2xl"
+            style={{ background: 'var(--bg-surface)', borderLeft: '1px solid var(--border-default)' }}>
+            <div className="flex items-center justify-between px-5 py-4 flex-shrink-0"
+              style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+              <h2 className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                {PANEL_TITLES[slidePanel]} — By Client
+              </h2>
+              <button onClick={() => setSlidePanel(null)} className="w-7 h-7 rounded flex items-center justify-center"
+                style={{ color: 'var(--text-muted)' }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
+                onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}>
+                <X size={15} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {slidePanelData.length === 0 ? (
+                <p className="px-5 py-8 text-sm text-center" style={{ color: 'var(--text-muted)' }}>
+                  No installments in this category
+                </p>
+              ) : (
+                slidePanelData.map((breakdown) => (
+                  <ClientBreakdownSection key={breakdown.clientId} breakdown={breakdown} />
+                ))
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ── Sub-components ─────────────────────────────────────────────────────────────
+
+interface ClientBreakdown {
+  clientId: string
+  clientName: string
+  initials: string
+  items: (Installment & { client?: Client; deal?: Deal })[]
+  total: number
+}
+
+function ClientBreakdownSection({ breakdown }: { breakdown: ClientBreakdown }) {
+  const [expanded, setExpanded] = useState(false)
+
+  return (
+    <div style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+      <button onClick={() => setExpanded((e) => !e)}
+        className="w-full flex items-center justify-between px-5 py-4 text-left"
+        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-elevated)')}
+        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0"
+            style={{ background: 'var(--gold-muted)', color: 'var(--gold-primary)', fontFamily: 'DM Mono, monospace' }}>
+            {breakdown.initials}
+          </div>
+          <div>
+            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{breakdown.clientName}</p>
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              {breakdown.items.length} installment{breakdown.items.length !== 1 ? 's' : ''}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <span style={{ fontFamily: 'DM Mono, monospace', color: 'var(--gold-primary)', fontSize: '14px' }}>
+            {formatCurrency(breakdown.total)}
+          </span>
+          {expanded
+            ? <ChevronDown size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+            : <ChevronRight size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />}
+        </div>
+      </button>
+
+      {expanded && (
+        <div>
+          {breakdown.items.map((inst) => (
+            <div key={inst.id} className="flex items-center justify-between px-5 py-3"
+              style={{ borderTop: '1px solid var(--border-subtle)', background: 'var(--bg-elevated)' }}>
+              <div>
+                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{inst.title}</p>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Due {formatDate(inst.due_date)}</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <InstallmentStatusBadge status={inst.status} />
+                <span style={{ fontFamily: 'DM Mono, monospace', color: 'var(--text-primary)', fontSize: '13px' }}>
+                  {formatCurrency(inst.amount, inst.currency)}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   )

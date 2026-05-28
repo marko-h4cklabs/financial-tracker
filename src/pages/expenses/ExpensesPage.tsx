@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Plus, Receipt, TrendingDown, Tag, AlertCircle } from 'lucide-react'
+import { Plus, Receipt, TrendingDown, Tag, AlertCircle, MoreHorizontal } from 'lucide-react'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns'
 import { supabase } from '@/lib/supabase'
@@ -14,6 +14,7 @@ import { CategoryBadge } from '@/components/ui/Badge'
 import EmptyState from '@/components/ui/EmptyState'
 import { SkeletonCard } from '@/components/ui/Skeleton'
 import ExpenseFormModal from '@/components/modules/ExpenseFormModal'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import toast from 'react-hot-toast'
 
 type EnrichedExpense = Expense & { client?: Client; deal?: Deal; created_by_profile?: { full_name: string } }
@@ -50,6 +51,8 @@ export default function ExpensesPage() {
   const [dealFilter, setDealFilter] = useState(searchParams.get('deal') ?? '')
   const [showModal, setShowModal] = useState(false)
   const [editExpense, setEditExpense] = useState<Expense | null>(null)
+  const [menuOpen, setMenuOpen] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null)
   const [kpis, setKpis] = useState({ thisMonth: 0, thisYear: 0, topCategory: '', unlinked: 0 })
   const [monthlyData, setMonthlyData] = useState<{ month: string; total: number; byCategory: Record<string, number> }[]>([])
 
@@ -119,8 +122,7 @@ export default function ExpensesPage() {
     setMonthlyData(months)
   }
 
-  async function deleteExpense(id: string, title: string) {
-    if (!confirm(`Delete expense "${title}"?`)) return
+  async function deleteExpense(id: string) {
     await supabase.from('expenses').delete().eq('id', id)
     toast.success('Expense deleted')
     fetchExpenses(); fetchKpis()

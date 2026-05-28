@@ -19,6 +19,7 @@ import Badge, { DealStageBadge } from '@/components/ui/Badge'
 import EmptyState from '@/components/ui/EmptyState'
 import { SkeletonRow } from '@/components/ui/Skeleton'
 import DealFormModal from '@/components/modules/DealFormModal'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import toast from 'react-hot-toast'
 import { Briefcase } from 'lucide-react'
 
@@ -66,6 +67,7 @@ export default function DealsPage() {
   const [showModal, setShowModal] = useState(false)
   const [editDeal, setEditDeal] = useState<Deal | null>(null)
   const [menuOpen, setMenuOpen] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null)
 
   const dragId = useRef<string | null>(null)
   const [dragOver, setDragOver] = useState<DealStage | null>(null)
@@ -114,7 +116,6 @@ export default function DealsPage() {
   }
 
   async function deleteDeal(dealId: string, title: string) {
-    if (!confirm(`Delete "${title}"? This cannot be undone.`)) return
     await supabase.from('deals').delete().eq('id', dealId)
     await logActivity({ entity_type: 'deal', entity_id: dealId, action: 'delete', description: `Deleted deal "${title}"` })
     toast.success('Deal deleted')
@@ -242,16 +243,16 @@ export default function DealsPage() {
             <div className="absolute right-0 top-8 w-40 rounded shadow-lg z-10 py-1"
               style={{ background: 'var(--bg-overlay)', border: '1px solid var(--border-default)' }}>
               {[
-                { label: 'View', action: () => navigate(`/deals/${row.original.id}`) },
-                { label: 'Edit', action: () => { setEditDeal(row.original); setShowModal(true); setMenuOpen(null) } },
-                { label: 'Move to Won', action: () => { updateDealStage(row.original.id, 'won'); setMenuOpen(null) } },
-                { label: 'Move to Lost', action: () => { updateDealStage(row.original.id, 'lost'); setMenuOpen(null) } },
-                { label: 'Delete', action: () => { deleteDeal(row.original.id, row.original.title); setMenuOpen(null) } },
-              ].map(({ label, action }) => (
+                { label: 'View', danger: false, action: () => { navigate(`/deals/${row.original.id}`); setMenuOpen(null) } },
+                { label: 'Edit', danger: false, action: () => { setEditDeal(row.original); setShowModal(true); setMenuOpen(null) } },
+                { label: 'Move to Won', danger: false, action: () => { updateDealStage(row.original.id, 'won'); setMenuOpen(null) } },
+                { label: 'Move to Lost', danger: false, action: () => { updateDealStage(row.original.id, 'lost'); setMenuOpen(null) } },
+                { label: 'Delete', danger: true, action: () => { setDeleteTarget({ id: row.original.id, title: row.original.title }); setMenuOpen(null) } },
+              ].map(({ label, action, danger }) => (
                 <button key={label} onClick={(e) => { e.stopPropagation(); action() }}
                   className="w-full text-left px-3 py-2 text-xs"
-                  style={{ color: label === 'Delete' ? 'var(--status-red)' : 'var(--text-secondary)' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-elevated)' }}
+                  style={{ color: danger ? 'var(--status-red)' : 'var(--text-secondary)' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = danger ? 'rgba(224,82,82,0.08)' : 'var(--bg-elevated)' }}
                   onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
                   {label}
                 </button>
@@ -528,15 +529,16 @@ export default function DealsPage() {
                             <div className="absolute bottom-8 right-2 w-36 rounded shadow-lg z-20 py-1"
                               style={{ background: 'var(--bg-overlay)', border: '1px solid var(--border-default)' }}>
                               {[
-                                { label: 'Edit', action: () => { setEditDeal(deal); setShowModal(true); setMenuOpen(null) } },
-                                { label: 'Move to Won', action: () => { updateDealStage(deal.id, 'won'); setMenuOpen(null) } },
-                                { label: 'Move to Lost', action: () => { updateDealStage(deal.id, 'lost'); setMenuOpen(null) } },
-                                { label: 'Delete', action: () => { deleteDeal(deal.id, deal.title); setMenuOpen(null) } },
-                              ].map(({ label, action }) => (
+                                { label: 'View', action: () => { navigate(`/deals/${deal.id}`); setMenuOpen(null) }, danger: false },
+                                { label: 'Edit', action: () => { setEditDeal(deal); setShowModal(true); setMenuOpen(null) }, danger: false },
+                                { label: 'Move to Won', action: () => { updateDealStage(deal.id, 'won'); setMenuOpen(null) }, danger: false },
+                                { label: 'Move to Lost', action: () => { updateDealStage(deal.id, 'lost'); setMenuOpen(null) }, danger: false },
+                                { label: 'Delete', danger: true, action: () => { setDeleteTarget({ id: deal.id, title: deal.title }); setMenuOpen(null) } },
+                              ].map(({ label, action, danger }) => (
                                 <button key={label} onClick={action}
                                   className="w-full text-left px-3 py-1.5 text-xs"
-                                  style={{ color: label === 'Delete' ? 'var(--status-red)' : 'var(--text-secondary)' }}
-                                  onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-elevated)' }}
+                                  style={{ color: danger ? 'var(--status-red)' : 'var(--text-secondary)' }}
+                                  onMouseEnter={(e) => { e.currentTarget.style.background = danger ? 'rgba(224,82,82,0.08)' : 'var(--bg-elevated)' }}
                                   onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
                                   {label}
                                 </button>
@@ -588,6 +590,13 @@ export default function DealsPage() {
         profiles={profiles}
         currentUserId={profile?.id ?? ''}
         onSaved={() => { fetchDeals(); setShowModal(false); setEditDeal(null) }}
+      />
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => deleteTarget && deleteDeal(deleteTarget.id, deleteTarget.title)}
+        title={`Delete "${deleteTarget?.title}"?`}
+        message="This cannot be undone."
       />
     </div>
   )

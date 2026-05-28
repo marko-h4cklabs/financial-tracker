@@ -20,6 +20,7 @@ import { ClientStatusBadge } from '@/components/ui/Badge'
 import EmptyState from '@/components/ui/EmptyState'
 import { SkeletonRow } from '@/components/ui/Skeleton'
 import ClientFormModal from '@/components/modules/ClientFormModal'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import toast from 'react-hot-toast'
 
 type EnrichedClient = Client & { deal_count: number; deal_value: number; assigned_profile?: Profile }
@@ -39,6 +40,7 @@ export default function ClientsPage() {
   const [showModal, setShowModal] = useState(false)
   const [editClient, setEditClient] = useState<Client | null>(null)
   const [menuOpen, setMenuOpen] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
   const [filtersOpen, setFiltersOpen] = useState(false)
   const isMobile = useIsMobile()
 
@@ -46,6 +48,12 @@ export default function ClientsPage() {
     fetchClients()
     fetchProfiles()
   }, [])
+
+  async function deleteClient(id: string) {
+    await supabase.from('clients').delete().eq('id', id)
+    toast.success('Client deleted')
+    fetchClients()
+  }
 
   async function fetchProfiles() {
     const { data } = await supabase.from('profiles').select('*').eq('is_active', true)
@@ -171,22 +179,24 @@ export default function ClientsPage() {
             <div className="absolute right-0 top-8 w-36 rounded shadow-lg z-10 py-1"
               style={{ background: 'var(--bg-overlay)', border: '1px solid var(--border-default)' }}>
               {[
-                { label: 'View', action: () => navigate(`/clients/${row.original.id}`) },
-                { label: 'Edit', action: () => { setEditClient(row.original); setShowModal(true); setMenuOpen(null) } },
+                { label: 'View', action: () => { navigate(`/clients/${row.original.id}`); setMenuOpen(null) }, danger: false },
+                { label: 'Edit', action: () => { setEditClient(row.original); setShowModal(true); setMenuOpen(null) }, danger: false },
                 {
                   label: row.original.status === 'inactive' ? 'Activate' : 'Deactivate',
+                  danger: false,
                   action: async () => {
                     const s = row.original.status === 'inactive' ? 'active' : 'inactive'
                     await supabase.from('clients').update({ status: s }).eq('id', row.original.id)
                     setMenuOpen(null); fetchClients()
                   }
                 },
-              ].map(({ label, action }) => (
+                { label: 'Delete', danger: true, action: () => { setDeleteTarget({ id: row.original.id, name: row.original.name }); setMenuOpen(null) } },
+              ].map(({ label, action, danger }) => (
                 <button key={label} onClick={(e) => { e.stopPropagation(); action() }}
                   className="w-full text-left px-3 py-2 text-xs"
-                  style={{ color: 'var(--text-secondary)' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-elevated)'; e.currentTarget.style.color = 'var(--text-primary)' }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary)' }}>
+                  style={{ color: danger ? 'var(--status-red)' : 'var(--text-secondary)' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = danger ? 'rgba(224,82,82,0.08)' : 'var(--bg-elevated)' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
                   {label}
                 </button>
               ))}
@@ -346,6 +356,13 @@ export default function ClientsPage() {
         profiles={profiles}
         currentUserId={profile?.id ?? ''}
         onSaved={() => { fetchClients(); setShowModal(false); setEditClient(null) }}
+      />
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => deleteTarget && deleteClient(deleteTarget.id)}
+        title={`Delete ${deleteTarget?.name}?`}
+        message="This cannot be undone."
       />
     </div>
   )
