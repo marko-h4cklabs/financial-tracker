@@ -155,6 +155,48 @@ export interface Expense {
   created_by_profile?: Profile
 }
 
+export type WorkCategory = 'strategy' | 'creative' | 'copywriting' | 'ads' | 'social_media' | 'reporting' | 'meeting' | 'admin' | 'general'
+
+export interface WorkLog {
+  id: string
+  client_id: string | null
+  deal_id?: string | null
+  logged_by: string | null
+  title: string
+  description?: string | null
+  category: WorkCategory
+  worked_on: string
+  duration_minutes?: number | null
+  created_at: string
+  updated_at: string
+  client?: Client
+  deal?: Deal
+  profile?: Profile
+}
+
+export type ChecklistPriority = 'low' | 'medium' | 'high' | 'urgent'
+
+export interface ChecklistItem {
+  id: string
+  client_id: string | null
+  deal_id?: string | null
+  created_by: string | null
+  assigned_to?: string | null
+  title: string
+  notes?: string | null
+  priority: ChecklistPriority
+  is_done: boolean
+  done_by?: string | null
+  done_at?: string | null
+  due_date?: string | null
+  sort_order: number
+  created_at: string
+  updated_at: string
+  client?: Client
+  deal?: Deal
+  assignee?: Profile
+}
+
 export type ActivityAction = 'create' | 'update' | 'delete' | 'payment' | 'status_change'
 
 export interface ActivityLog {

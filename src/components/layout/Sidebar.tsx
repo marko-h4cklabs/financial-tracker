@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, Briefcase, FileText,
-  CalendarClock, Receipt, ShieldCheck, Settings, LogOut, X,
+  CalendarClock, Receipt, ClipboardList, ShieldCheck, Settings, LogOut, X,
 } from 'lucide-react'
 import { useAuth } from '@/store/authStore'
 import { useUIStore } from '@/store/uiStore'
@@ -13,6 +13,7 @@ const navItems = [
   { to: '/invoices',  label: 'Invoices',  icon: FileText },
   { to: '/installments', label: 'Installments', icon: CalendarClock },
   { to: '/expenses',  label: 'Expenses',  icon: Receipt },
+  { to: '/work',     label: 'Work Tracker', icon: ClipboardList },
 ]
 
 export default function Sidebar() {

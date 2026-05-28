@@ -1,4 +1,4 @@
-import type { DealStage, InvoiceStatus, ClientStatus, InstallmentStatus, ExpenseCategory } from '@/types'
+import type { DealStage, InvoiceStatus, ClientStatus, InstallmentStatus, ExpenseCategory, WorkCategory, ChecklistPriority } from '@/types'
 
 type BadgeVariant = 'default' | 'success' | 'warning' | 'danger' | 'info' | 'purple' | 'gold' | 'muted'
 
@@ -88,6 +88,62 @@ export function CategoryBadge({ category }: { category: ExpenseCategory }) {
   }
   const { label, variant } = map[category]
   return <Badge variant={variant}>{label}</Badge>
+}
+
+export const WORK_CATEGORY_COLORS: Record<WorkCategory, string> = {
+  strategy: 'var(--status-purple)',
+  creative: '#E879A0',
+  copywriting: 'var(--status-blue)',
+  ads: '#E8882A',
+  social_media: '#2ABFBF',
+  reporting: 'var(--status-yellow)',
+  meeting: 'var(--gold-primary)',
+  admin: 'var(--text-secondary)',
+  general: 'var(--text-muted)',
+}
+
+const WORK_CATEGORY_LABELS: Record<WorkCategory, string> = {
+  strategy: 'Strategy',
+  creative: 'Creative',
+  copywriting: 'Copy',
+  ads: 'Ads',
+  social_media: 'Social',
+  reporting: 'Reporting',
+  meeting: 'Meeting',
+  admin: 'Admin',
+  general: 'General',
+}
+
+export function WorkCategoryBadge({ category }: { category: WorkCategory }) {
+  const color = WORK_CATEGORY_COLORS[category]
+  return (
+    <span
+      className="inline-flex items-center rounded font-medium px-2 py-0.5 text-[10px] tracking-wide uppercase whitespace-nowrap"
+      style={{ background: `${color}18`, color, border: `1px solid ${color}33` }}
+    >
+      {WORK_CATEGORY_LABELS[category]}
+    </span>
+  )
+}
+
+export const PRIORITY_COLORS: Record<ChecklistPriority, string> = {
+  urgent: 'var(--status-red)',
+  high: '#E8882A',
+  medium: 'var(--status-yellow)',
+  low: 'var(--text-muted)',
+}
+
+export function PriorityBadge({ priority }: { priority: ChecklistPriority }) {
+  const color = PRIORITY_COLORS[priority]
+  const labels: Record<ChecklistPriority, string> = { urgent: 'Urgent', high: 'High', medium: 'Medium', low: 'Low' }
+  return (
+    <span
+      className="inline-flex items-center rounded font-medium px-2 py-0.5 text-[10px] tracking-wide uppercase"
+      style={{ background: `${color}18`, color, border: `1px solid ${color}33` }}
+    >
+      {labels[priority]}
+    </span>
+  )
 }
 
 export default Badge

@@ -16,6 +16,7 @@ import InvoiceDetailPage from '@/pages/invoices/InvoiceDetailPage'
 import InvoiceFormPage from '@/pages/invoices/InvoiceFormPage'
 import InstallmentsPage from '@/pages/installments/InstallmentsPage'
 import ExpensesPage from '@/pages/expenses/ExpensesPage'
+import WorkTrackerPage from '@/pages/work/WorkTrackerPage'
 import AdminPage from '@/pages/admin/AdminPage'
 import SettingsPage from '@/pages/settings/SettingsPage'
 
@@ -61,6 +62,7 @@ export default function App() {
         <Route path="/invoices/:id" element={<Protected><InvoiceDetailPage /></Protected>} />
         <Route path="/installments" element={<Protected><InstallmentsPage /></Protected>} />
         <Route path="/expenses" element={<Protected><ExpensesPage /></Protected>} />
+        <Route path="/work" element={<Protected><WorkTrackerPage /></Protected>} />
         <Route path="/settings" element={<Protected><SettingsPage /></Protected>} />
 
         <Route

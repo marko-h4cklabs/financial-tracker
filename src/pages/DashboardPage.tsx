@@ -2,14 +2,14 @@ import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { TrendingUp, Clock, Briefcase, Receipt, CheckCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { formatCurrency, formatRelativeDate, formatDaysUntil } from '@/lib/formatters'
+import { formatCurrency, formatRelativeDate, formatDaysUntil, formatDuration } from '@/lib/formatters'
 import StatCard from '@/components/ui/StatCard'
 import Card from '@/components/ui/Card'
 import { SkeletonCard } from '@/components/ui/Skeleton'
 import Button from '@/components/ui/Button'
 import toast from 'react-hot-toast'
 import type { ActivityLog, Installment, Invoice, DealStage } from '@/types'
-import { differenceInDays, startOfMonth, endOfMonth } from 'date-fns'
+import { differenceInDays, startOfMonth, endOfMonth, startOfWeek, format } from 'date-fns'
 
 type Period = 'month' | 'overall'
 
@@ -56,9 +56,12 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
 
   const mountedRef = useRef(false)
+  const [teamActivity, setTeamActivity] = useState<{ memberId: string; name: string; initials: string; count: number; totalMinutes: number }[]>([])
+  const [recentDone, setRecentDone] = useState<{ id: string; title: string; clientName: string; doneByName: string }[]>([])
 
   useEffect(() => {
     fetchAll()
+    fetchTeamActivity()
   }, [])
 
   useEffect(() => {
@@ -183,6 +186,51 @@ export default function DashboardPage() {
       .order('due_date', { ascending: true })
       .limit(5)
     setUpcomingInstallments((data ?? []) as Installment[])
+  }
+
+  async function fetchTeamActivity() {
+    const weekStart = format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd')
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
+
+    const [{ data: logsData }, { data: doneData }] = await Promise.all([
+      supabase.from('work_logs')
+        .select('logged_by, duration_minutes, profile:logged_by(id, full_name, avatar_initials)')
+        .gte('worked_on', weekStart),
+      supabase.from('checklist_items')
+        .select('id, title, done_at, client:client_id(name), doneByProfile:done_by(full_name)')
+        .eq('is_done', true)
+        .gte('done_at', todayStart.toISOString())
+        .order('done_at', { ascending: false })
+        .limit(5),
+    ])
+
+    // Build team activity
+    const memberMap = new Map<string, { name: string; initials: string; count: number; totalMinutes: number }>()
+    ;(logsData ?? []).forEach((row) => {
+      if (!row.logged_by) return
+      const prof = row.profile as { id?: string; full_name?: string; avatar_initials?: string } | null
+      const name = prof?.full_name ?? 'Unknown'
+      const initials = prof?.avatar_initials ?? name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
+      const entry = memberMap.get(row.logged_by) ?? { name, initials, count: 0, totalMinutes: 0 }
+      entry.count += 1
+      entry.totalMinutes += row.duration_minutes ?? 0
+      memberMap.set(row.logged_by, entry)
+    })
+    setTeamActivity(
+      Array.from(memberMap.entries())
+        .map(([memberId, data]) => ({ memberId, ...data }))
+        .sort((a, b) => b.count - a.count)
+    )
+
+    // Build recently done tasks
+    setRecentDone(
+      (doneData ?? []).map((row) => ({
+        id: row.id,
+        title: row.title,
+        clientName: (row.client as { name?: string } | null)?.name ?? '—',
+        doneByName: (row.doneByProfile as { full_name?: string } | null)?.full_name ?? '—',
+      }))
+    )
   }
 
   async function fetchOverdueInvoices() {
@@ -428,6 +476,69 @@ export default function DashboardPage() {
           </div>
         </Card>
       </div>
+      {/* Team Activity This Week */}
+      {(teamActivity.length > 0 || recentDone.length > 0) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Work logs by member */}
+          <Card>
+            <div className="px-5 py-4" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+              <h3 className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Team Activity This Week</h3>
+            </div>
+            {teamActivity.length === 0 ? (
+              <p className="px-5 py-6 text-xs text-center" style={{ color: 'var(--text-muted)' }}>No work logged this week</p>
+            ) : (
+              <div className="p-4 space-y-3">
+                {(() => {
+                  const maxCount = Math.max(...teamActivity.map((m) => m.count), 1)
+                  return teamActivity.map((member) => (
+                    <div key={member.memberId} className="flex items-center gap-3">
+                      <div className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-semibold flex-shrink-0"
+                        style={{ background: 'var(--gold-muted)', color: 'var(--gold-primary)', fontFamily: 'DM Mono, monospace' }}>
+                        {member.initials}
+                      </div>
+                      <span className="text-xs w-28 truncate" style={{ color: 'var(--text-secondary)' }}>{member.name}</span>
+                      <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--bg-elevated)' }}>
+                        <div className="h-full rounded-full" style={{ width: `${(member.count / maxCount) * 100}%`, background: 'var(--gold-primary)' }} />
+                      </div>
+                      <span className="text-[10px] w-16 text-right flex-shrink-0" style={{ fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>
+                        {member.count} log{member.count !== 1 ? 's' : ''}
+                        {member.totalMinutes > 0 ? ` · ${formatDuration(member.totalMinutes)}` : ''}
+                      </span>
+                    </div>
+                  ))
+                })()}
+              </div>
+            )}
+          </Card>
+
+          {/* Recently completed tasks */}
+          <Card>
+            <div className="px-5 py-4" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+              <h3 className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Completed Today</h3>
+            </div>
+            {recentDone.length === 0 ? (
+              <p className="px-5 py-6 text-xs text-center" style={{ color: 'var(--text-muted)' }}>No tasks completed today yet</p>
+            ) : (
+              <div className="divide-y" style={{ borderColor: 'var(--border-subtle)' }}>
+                {recentDone.map((task) => (
+                  <div key={task.id} className="flex items-start gap-3 px-5 py-3">
+                    <div className="w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 mt-0.5"
+                      style={{ borderColor: 'var(--gold-primary)', background: 'var(--gold-primary)' }}>
+                      <CheckCircle size={10} style={{ color: '#0A0A0A' }} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>{task.title}</p>
+                      <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                        {task.clientName} · by {task.doneByName}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
     </div>
   )
 }
